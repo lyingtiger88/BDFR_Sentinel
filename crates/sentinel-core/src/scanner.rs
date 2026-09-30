@@ -1,4 +1,4 @@
-use crate::{EngineRegistry, FileMetadata, ScanError, ScanReport, ScanVerdict};
+use crate::{DetectionPolicy, EngineRegistry, FileMetadata, ScanError, ScanReport};
 use sha2::{Digest, Sha256};
 use std::fs;
 use std::path::Path;
@@ -6,12 +6,14 @@ use std::path::Path;
 #[derive(Debug, Clone)]
 pub struct ScannerConfig {
     pub max_file_size: u64,
+    pub policy: DetectionPolicy,
 }
 
 impl Default for ScannerConfig {
     fn default() -> Self {
         Self {
             max_file_size: 128 * 1024 * 1024,
+            policy: DetectionPolicy::default(),
         }
     }
 }
@@ -56,7 +58,7 @@ impl FileScanner {
                 size: metadata.len(),
                 sha256,
             },
-            verdict: ScanVerdict::from_detections(detections),
+            verdict: self.config.policy.evaluate(detections),
         })
     }
 }
@@ -74,7 +76,7 @@ fn hex_sha256(data: &[u8]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{Detection, DetectionKind, ScanEngine, ThreatLevel};
+    use crate::{Detection, DetectionCategory, DetectionKind, ScanEngine, ThreatLevel};
     use std::io::Write;
 
     struct TestEngine;
@@ -90,6 +92,7 @@ mod tests {
                     engine: self.name().to_string(),
                     rule_id: Some("TEST-001".to_string()),
                     kind: DetectionKind::Signature,
+                    category: DetectionCategory::Malware,
                     level: ThreatLevel::Malicious,
                     title: "Synthetic test detection".to_string(),
                     details: None,
