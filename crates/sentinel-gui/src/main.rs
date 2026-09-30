@@ -196,8 +196,7 @@ impl SentinelApp {
     }
 
     fn restore_entry(&mut self, entry: &QuarantineEntry) {
-        match QuarantineStore::open(&self.quarantine_dir)
-            .and_then(|store| store.restore(entry.id))
+        match QuarantineStore::open(&self.quarantine_dir).and_then(|store| store.restore(entry.id))
         {
             Ok(restored) => {
                 self.status_text = format!("Restored {}", restored.original_path.display());
@@ -208,9 +207,7 @@ impl SentinelApp {
     }
 
     fn delete_entry(&mut self, entry: &QuarantineEntry) {
-        match QuarantineStore::open(&self.quarantine_dir)
-            .and_then(|store| store.delete(entry.id))
-        {
+        match QuarantineStore::open(&self.quarantine_dir).and_then(|store| store.delete(entry.id)) {
             Ok(()) => {
                 self.status_text = "Quarantine entry deleted".to_string();
                 self.refresh_quarantine();
@@ -279,7 +276,10 @@ impl SentinelApp {
                 self.target = rfd::FileDialog::new().pick_folder();
             }
             if ui
-                .add_enabled(!self.scanning && self.target.is_some(), egui::Button::new("Start scan"))
+                .add_enabled(
+                    !self.scanning && self.target.is_some(),
+                    egui::Button::new("Start scan"),
+                )
                 .clicked()
             {
                 self.start_scan();
@@ -296,7 +296,11 @@ impl SentinelApp {
         );
 
         if self.scanning {
-            ui.add(egui::ProgressBar::new(0.5).animate(true).text("Scanning..."));
+            ui.add(
+                egui::ProgressBar::new(0.5)
+                    .animate(true)
+                    .text("Scanning..."),
+            );
         }
 
         ui.separator();
@@ -401,9 +405,13 @@ impl SentinelApp {
         ui.add_space(12.0);
         ui.group(|ui| {
             ui.heading("Detection policy");
-            ui.label("Malware, ransomware, trojans, backdoors and similar threats remain actionable.");
+            ui.label(
+                "Malware, ransomware, trojans, backdoors and similar threats remain actionable.",
+            );
             ui.label("Crack and license-bypass classifications are ignored by default.");
-            ui.label("A cracked file is still detected if it independently matches malware indicators.");
+            ui.label(
+                "A cracked file is still detected if it independently matches malware indicators.",
+            );
         });
     }
 }
