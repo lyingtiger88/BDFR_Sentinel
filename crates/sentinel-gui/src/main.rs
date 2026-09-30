@@ -245,11 +245,6 @@ impl SentinelApp {
         }
     }
 
-    fn set_theme_mode(&mut self, ctx: &egui::Context, mode: ThemeMode) {
-        self.theme_mode = mode;
-        configure_style(ctx, mode);
-        self.applied_theme = resolved_theme(ctx, mode);
-    }
 
     fn refresh_metrics(&mut self) {
         if self.last_metrics_refresh.elapsed() < Duration::from_millis(900) {
