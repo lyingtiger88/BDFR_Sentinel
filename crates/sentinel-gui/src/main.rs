@@ -614,11 +614,11 @@ impl SentinelApp {
         ui.add_space(14.0);
 
         ui.horizontal_wrapped(|ui| {
-            metric_card(ui, "Scanned", self.scanned_count, ACCENT);
+            metric_card(ui, "Scanned", self.scanned_count, ui.visuals().hyperlink_color);
             metric_card(ui, "Clean", self.clean_count, GOOD);
             metric_card(ui, "Suspicious", self.suspicious_count, WARN);
             metric_card(ui, "Malicious", self.malicious_count, BAD);
-            metric_card(ui, "Quarantine", self.quarantine_entries.len(), ACCENT);
+            metric_card(ui, "Quarantine", self.quarantine_entries.len(), ui.visuals().hyperlink_color);
         });
 
         ui.add_space(14.0);
@@ -628,7 +628,7 @@ impl SentinelApp {
                 "CPU",
                 self.cpu_usage,
                 format!("{:.0}% in use", self.cpu_usage),
-                ACCENT,
+                columns[0].visuals().hyperlink_color,
             );
             resource_card(
                 &mut columns[1],
@@ -646,7 +646,7 @@ impl SentinelApp {
         settings_card(ui, "Protection components", |ui| {
             status_row(ui, "Core scanner", "Ready", GOOD);
             status_row(ui, "PE analyzer", "Ready", GOOD);
-            status_row(ui, "Hash definitions", "HDB / HSB", ACCENT);
+            status_row(ui, "Hash definitions", "HDB / HSB", ui.visuals().hyperlink_color);
             status_row(ui, "Encrypted quarantine", "AES-256-GCM + DPAPI", GOOD);
             status_row(ui, "Real-time monitor", "Core module available", WARN);
         });
@@ -952,7 +952,7 @@ impl SentinelApp {
 
         ui.add_space(14.0);
         settings_card(ui, "System", |ui| {
-            status_row(ui, "CPU usage", &format!("{:.0}%", self.cpu_usage), ACCENT);
+            status_row(ui, "CPU usage", &format!("{:.0}%", self.cpu_usage), ui.visuals().hyperlink_color);
             status_row(
                 ui,
                 "Memory usage",
@@ -991,7 +991,7 @@ impl SentinelApp {
                 ui.add_space(12.0);
 
                 ui.horizontal_wrapped(|ui| {
-                    metric_card(ui, "Scanned", summary.scanned, ACCENT);
+                    metric_card(ui, "Scanned", summary.scanned, ui.visuals().hyperlink_color);
                     metric_card(ui, "Clean", summary.clean, GOOD);
                     metric_card(ui, "Suspicious", summary.suspicious, WARN);
                     metric_card(ui, "Malicious", summary.malicious, BAD);
