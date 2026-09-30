@@ -635,12 +635,13 @@ impl SentinelApp {
 
         ui.add_space(14.0);
         ui.columns(2, |columns| {
+            let accent = columns[0].visuals().hyperlink_color;
             resource_card(
                 &mut columns[0],
                 "CPU",
                 self.cpu_usage,
                 format!("{:.0}% in use", self.cpu_usage),
-                columns[0].visuals().hyperlink_color,
+                accent,
             );
             resource_card(
                 &mut columns[1],
