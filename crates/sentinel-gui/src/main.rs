@@ -249,13 +249,7 @@ impl SentinelApp {
                 }
 
                 let _ = tx.send(WorkerMessage::Current(path.clone()));
-                scan_and_send(
-                    &scanner,
-                    &path,
-                    quarantine.as_ref(),
-                    auto_quarantine,
-                    &tx,
-                );
+                scan_and_send(&scanner, &path, quarantine.as_ref(), auto_quarantine, &tx);
             }
 
             let _ = tx.send(WorkerMessage::Finished {
@@ -393,9 +387,22 @@ impl SentinelApp {
         body.push_str("BDFR Sentinel Scan Report\n");
         body.push_str("=========================\n\n");
         body.push_str(&format!("Target: {}\n", summary.target));
-        body.push_str(&format!("Status: {}\n", if summary.cancelled { "Cancelled" } else { "Completed" }));
-        body.push_str(&format!("Duration: {:.2}s\n", summary.duration.as_secs_f64()));
-        body.push_str(&format!("Scanned: {} / {}\n", summary.scanned, summary.total));
+        body.push_str(&format!(
+            "Status: {}\n",
+            if summary.cancelled {
+                "Cancelled"
+            } else {
+                "Completed"
+            }
+        ));
+        body.push_str(&format!(
+            "Duration: {:.2}s\n",
+            summary.duration.as_secs_f64()
+        ));
+        body.push_str(&format!(
+            "Scanned: {} / {}\n",
+            summary.scanned, summary.total
+        ));
         body.push_str(&format!("Clean: {}\n", summary.clean));
         body.push_str(&format!("Suspicious: {}\n", summary.suspicious));
         body.push_str(&format!("Malicious: {}\n\n", summary.malicious));
@@ -428,7 +435,11 @@ impl SentinelApp {
         let selected = self.page == page;
         let text = egui::RichText::new(format!("{icon}   {label}"))
             .size(17.0)
-            .color(if selected { egui::Color32::WHITE } else { egui::Color32::from_rgb(225, 225, 225) });
+            .color(if selected {
+                egui::Color32::WHITE
+            } else {
+                egui::Color32::from_rgb(225, 225, 225)
+            });
 
         let button = egui::Button::new(text)
             .fill(if selected {
@@ -449,7 +460,10 @@ impl SentinelApp {
             let painter = ui.painter();
             let x = rect.left() + 2.0;
             painter.line_segment(
-                [egui::pos2(x, rect.bottom() - 45.0), egui::pos2(x, rect.bottom() - 9.0)],
+                [
+                    egui::pos2(x, rect.bottom() - 45.0),
+                    egui::pos2(x, rect.bottom() - 9.0),
+                ],
                 egui::Stroke::new(3.0, ACCENT),
             );
         }
@@ -461,7 +475,11 @@ impl SentinelApp {
             ui.label(egui::RichText::new("◈").size(28.0).color(ACCENT));
             ui.vertical(|ui| {
                 ui.label(egui::RichText::new("BDFR Sentinel").size(19.0).strong());
-                ui.label(egui::RichText::new("Endpoint Security").size(12.0).color(MUTED));
+                ui.label(
+                    egui::RichText::new("Endpoint Security")
+                        .size(12.0)
+                        .color(MUTED),
+                );
             });
         });
         ui.add_space(28.0);
@@ -473,13 +491,25 @@ impl SentinelApp {
 
         ui.with_layout(egui::Layout::bottom_up(egui::Align::LEFT), |ui| {
             ui.add_space(8.0);
-            ui.label(egui::RichText::new(format!("Version {}", env!("CARGO_PKG_VERSION"))).size(11.0).color(MUTED));
-            ui.label(egui::RichText::new("Crack/license-bypass ignored by default").size(11.0).color(MUTED));
+            ui.label(
+                egui::RichText::new(format!("Version {}", env!("CARGO_PKG_VERSION")))
+                    .size(11.0)
+                    .color(MUTED),
+            );
+            ui.label(
+                egui::RichText::new("Crack/license-bypass ignored by default")
+                    .size(11.0)
+                    .color(MUTED),
+            );
         });
     }
 
     fn dashboard(&mut self, ui: &mut egui::Ui) {
-        page_header(ui, "Security dashboard", "A quick view of protection, scan activity and system load.");
+        page_header(
+            ui,
+            "Security dashboard",
+            "A quick view of protection, scan activity and system load.",
+        );
 
         egui::Frame::new()
             .fill(PANEL)
@@ -490,7 +520,12 @@ impl SentinelApp {
                     ui.label(egui::RichText::new("✓").size(36.0).color(GOOD));
                     ui.vertical(|ui| {
                         ui.label(egui::RichText::new("You're protected").size(21.0).strong());
-                        ui.label(egui::RichText::new("BDFR Sentinel core protection components are ready.").color(MUTED));
+                        ui.label(
+                            egui::RichText::new(
+                                "BDFR Sentinel core protection components are ready.",
+                            )
+                            .color(MUTED),
+                        );
                     });
                 });
             });
@@ -557,7 +592,11 @@ impl SentinelApp {
     }
 
     fn scan_page(&mut self, ui: &mut egui::Ui) {
-        page_header(ui, "Scan", "Choose a file or folder and inspect it with the active detection engines.");
+        page_header(
+            ui,
+            "Scan",
+            "Choose a file or folder and inspect it with the active detection engines.",
+        );
 
         settings_card(ui, "Scan target", |ui| {
             ui.horizontal_wrapped(|ui| {
@@ -610,7 +649,10 @@ impl SentinelApp {
                     egui::ProgressBar::new(progress.clamp(0.0, 1.0))
                         .animate(true)
                         .desired_width(f32::INFINITY)
-                        .text(format!("{} / {} files", self.scanned_count, self.total_files)),
+                        .text(format!(
+                            "{} / {} files",
+                            self.scanned_count, self.total_files
+                        )),
                 );
 
                 if let Some(current) = &self.current_file {
@@ -677,11 +719,17 @@ impl SentinelApp {
     }
 
     fn quarantine_page(&mut self, ui: &mut egui::Ui) {
-        page_header(ui, "Quarantine", "Review isolated files, restore trusted items or remove them permanently.");
+        page_header(
+            ui,
+            "Quarantine",
+            "Review isolated files, restore trusted items or remove them permanently.",
+        );
 
         settings_card(ui, "Quarantine store", |ui| {
             ui.horizontal(|ui| {
-                ui.label(egui::RichText::new(self.quarantine_dir.display().to_string()).color(MUTED));
+                ui.label(
+                    egui::RichText::new(self.quarantine_dir.display().to_string()).color(MUTED),
+                );
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     if fluent_button(ui, "Refresh", false).clicked() {
                         self.refresh_quarantine();
@@ -707,7 +755,9 @@ impl SentinelApp {
                     .inner_margin(16.0)
                     .outer_margin(egui::Margin::symmetric(0, 5))
                     .show(ui, |ui| {
-                        ui.label(egui::RichText::new(entry.original_path.display().to_string()).strong());
+                        ui.label(
+                            egui::RichText::new(entry.original_path.display().to_string()).strong(),
+                        );
                         ui.label(
                             egui::RichText::new(format!(
                                 "{} bytes • SHA-256 {}",
@@ -732,7 +782,11 @@ impl SentinelApp {
     }
 
     fn settings_page(&mut self, ui: &mut egui::Ui) {
-        page_header(ui, "Settings", "Configure definition sources and detection behavior.");
+        page_header(
+            ui,
+            "Settings",
+            "Configure definition sources and detection behavior.",
+        );
 
         settings_card(ui, "Definition sources", |ui| {
             setting_picker(
@@ -766,8 +820,15 @@ impl SentinelApp {
 
         ui.add_space(14.0);
         settings_card(ui, "Detection policy", |ui| {
-            ui.label("Malware, ransomware, trojans, backdoors and similar threats remain actionable.");
-            ui.label(egui::RichText::new("Crack and license-bypass classifications are ignored by default.").color(MUTED));
+            ui.label(
+                "Malware, ransomware, trojans, backdoors and similar threats remain actionable.",
+            );
+            ui.label(
+                egui::RichText::new(
+                    "Crack and license-bypass classifications are ignored by default.",
+                )
+                .color(MUTED),
+            );
             ui.label(egui::RichText::new("A cracked file is still detected if it independently matches malware indicators.").color(MUTED));
         });
 
@@ -777,7 +838,10 @@ impl SentinelApp {
             status_row(
                 ui,
                 "Memory usage",
-                &format!("{:.0}% ({:.1}/{:.1} GB)", self.memory_usage, self.memory_used_gb, self.memory_total_gb),
+                &format!(
+                    "{:.0}% ({:.1}/{:.1} GB)",
+                    self.memory_usage, self.memory_used_gb, self.memory_total_gb
+                ),
                 egui::Color32::from_rgb(177, 113, 255),
             );
         });
@@ -859,7 +923,10 @@ impl SentinelApp {
                         ui.add_space(8.0);
                     }
                     if !any {
-                        ui.label(egui::RichText::new("No suspicious or malicious detections.").color(GOOD));
+                        ui.label(
+                            egui::RichText::new("No suspicious or malicious detections.")
+                                .color(GOOD),
+                        );
                     }
                 });
             });
@@ -887,7 +954,11 @@ impl eframe::App for SentinelApp {
 
         egui::TopBottomPanel::bottom("status")
             .resizable(false)
-            .frame(egui::Frame::new().fill(SIDEBAR).inner_margin(egui::Margin::symmetric(18, 8)))
+            .frame(
+                egui::Frame::new()
+                    .fill(SIDEBAR)
+                    .inner_margin(egui::Margin::symmetric(18, 8)),
+            )
             .show(ctx, |ui| {
                 ui.horizontal(|ui| {
                     if self.scanning {
@@ -895,16 +966,32 @@ impl eframe::App for SentinelApp {
                     } else {
                         ui.label(egui::RichText::new("●").color(GOOD));
                     }
-                    ui.label(egui::RichText::new(&self.status_text).size(12.0).color(MUTED));
+                    ui.label(
+                        egui::RichText::new(&self.status_text)
+                            .size(12.0)
+                            .color(MUTED),
+                    );
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        ui.label(egui::RichText::new(format!("RAM {:.0}%", self.memory_usage)).size(11.0).color(MUTED));
-                        ui.label(egui::RichText::new(format!("CPU {:.0}%", self.cpu_usage)).size(11.0).color(MUTED));
+                        ui.label(
+                            egui::RichText::new(format!("RAM {:.0}%", self.memory_usage))
+                                .size(11.0)
+                                .color(MUTED),
+                        );
+                        ui.label(
+                            egui::RichText::new(format!("CPU {:.0}%", self.cpu_usage))
+                                .size(11.0)
+                                .color(MUTED),
+                        );
                     });
                 });
             });
 
         egui::CentralPanel::default()
-            .frame(egui::Frame::new().fill(BG).inner_margin(egui::Margin::same(28)))
+            .frame(
+                egui::Frame::new()
+                    .fill(BG)
+                    .inner_margin(egui::Margin::same(28)),
+            )
             .show(ctx, |ui| match self.page {
                 Page::Dashboard => self.dashboard(ui),
                 Page::Scan => self.scan_page(ui),
@@ -952,7 +1039,12 @@ fn metric_card(ui: &mut egui::Ui, title: &str, value: usize, color: egui::Color3
         .inner_margin(16.0)
         .show(ui, |ui| {
             ui.set_min_width(125.0);
-            ui.label(egui::RichText::new(value.to_string()).size(25.0).strong().color(color));
+            ui.label(
+                egui::RichText::new(value.to_string())
+                    .size(25.0)
+                    .strong()
+                    .color(color),
+            );
             ui.label(egui::RichText::new(title).size(12.0).color(MUTED));
         });
 }
@@ -972,7 +1064,12 @@ fn resource_card(
             ui.horizontal(|ui| {
                 ui.label(egui::RichText::new(title).size(16.0).strong());
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    ui.label(egui::RichText::new(format!("{:.0}%", percentage)).size(22.0).strong().color(color));
+                    ui.label(
+                        egui::RichText::new(format!("{:.0}%", percentage))
+                            .size(22.0)
+                            .strong()
+                            .color(color),
+                    );
                 });
             });
             ui.add_space(5.0);
@@ -1035,7 +1132,11 @@ fn setting_picker(
             ui.label(egui::RichText::new(title).strong());
             ui.label(egui::RichText::new(subtitle).size(11.0).color(MUTED));
             if let Some(path) = current {
-                ui.label(egui::RichText::new(path.display().to_string()).size(11.0).color(ACCENT));
+                ui.label(
+                    egui::RichText::new(path.display().to_string())
+                        .size(11.0)
+                        .color(ACCENT),
+                );
             }
         });
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
