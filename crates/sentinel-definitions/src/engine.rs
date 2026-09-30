@@ -90,7 +90,8 @@ mod tests {
         hasher.update(data);
         let hash = format!("{:x}", hasher.finalize());
 
-        let db = ClamHashDatabase::parse_hsb(&format!("{hash}:{}:Trojan.Test", data.len())).unwrap();
+        let db =
+            ClamHashDatabase::parse_hsb(&format!("{hash}:{}:Trojan.Test", data.len())).unwrap();
         let engine = HashDefinitionEngine::new().with_hsb(db);
         let detections = engine.scan_bytes(data).unwrap();
 
