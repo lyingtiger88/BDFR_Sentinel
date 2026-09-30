@@ -24,6 +24,14 @@ pub enum ClamHashError {
 
 impl ClamHashDatabase {
     pub fn parse_hdb(input: &str) -> Result<Self, ClamHashError> {
+        Self::parse_hash_db(input, 32)
+    }
+
+    pub fn parse_hsb(input: &str) -> Result<Self, ClamHashError> {
+        Self::parse_hash_db(input, 64)
+    }
+
+    fn parse_hash_db(input: &str, expected_hash_len: usize) -> Result<Self, ClamHashError> {
         let mut db = Self::default();
 
         for raw in input.lines() {
@@ -44,7 +52,10 @@ impl ClamHashDatabase {
                 .ok_or_else(|| ClamHashError::InvalidLine(line.to_string()))?
                 .trim();
 
-            if hash.is_empty() || name.is_empty() {
+            if hash.len() != expected_hash_len
+                || !hash.bytes().all(|byte| byte.is_ascii_hexdigit())
+                || name.is_empty()
+            {
                 return Err(ClamHashError::InvalidLine(line.to_string()));
             }
 
@@ -70,8 +81,8 @@ impl ClamHashDatabase {
         Ok(db)
     }
 
-    pub fn lookup(&self, sha256_hex: &str) -> Option<&ClamHashEntry> {
-        self.entries.get(&sha256_hex.to_ascii_lowercase())
+    pub fn lookup_hash(&self, hash_hex: &str) -> Option<&ClamHashEntry> {
+        self.entries.get(&hash_hex.to_ascii_lowercase())
     }
 
     pub fn len(&self) -> usize {
@@ -126,8 +137,18 @@ mod tests {
 
         assert_eq!(db.len(), 1);
         let entry = db
-            .lookup("0123456789abcdef0123456789abcdef")
+            .lookup_hash("0123456789abcdef0123456789abcdef")
             .unwrap();
         assert_eq!(entry.category, DetectionCategory::Crack);
+    }
+
+    #[test]
+    fn parses_hsb_sha256_database() {
+        let hash = "a".repeat(64);
+        let db = ClamHashDatabase::parse_hsb(&format!("{hash}:42:Trojan.Unit.Test")).unwrap();
+        assert_eq!(
+            db.lookup_hash(&hash).unwrap().category,
+            DetectionCategory::Trojan
+        );
     }
 }
