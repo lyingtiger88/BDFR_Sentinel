@@ -139,6 +139,17 @@ enum Page {
     Settings,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum GaugeKind {
+    Cpu,
+    Memory,
+}
+
+struct GaugeCardResponse {
+    drag: egui::Response,
+    rect: egui::Rect,
+}
+
 enum WorkerMessage {
     Started(usize),
     Current(PathBuf),
@@ -189,6 +200,8 @@ struct SentinelApp {
     memory_total_gb: f64,
     theme_mode: ThemeMode,
     applied_theme: egui::Theme,
+    gauge_order: [GaugeKind; 2],
+    dragging_gauge: Option<GaugeKind>,
 }
 
 impl SentinelApp {
@@ -231,6 +244,8 @@ impl SentinelApp {
             memory_total_gb: 0.0,
             theme_mode,
             applied_theme,
+            gauge_order: [GaugeKind::Cpu, GaugeKind::Memory],
+            dragging_gauge: None,
         };
         app.refresh_quarantine();
         app.refresh_metrics();
@@ -628,26 +643,68 @@ impl SentinelApp {
         });
 
         ui.add_space(14.0);
+        ui.label(
+            egui::RichText::new("Drag the gauge cards to reorder them")
+                .size(11.0)
+                .color(ui.visuals().weak_text_color()),
+        );
+        ui.add_space(4.0);
+
+        let gauge_order = self.gauge_order;
+        let mut card_responses: [Option<GaugeCardResponse>; 2] = [None, None];
+
         ui.columns(2, |columns| {
-            let accent = columns[0].visuals().hyperlink_color;
-            resource_card(
-                &mut columns[0],
-                "CPU",
-                self.cpu_usage,
-                format!("{:.0}% in use", self.cpu_usage),
-                accent,
-            );
-            resource_card(
-                &mut columns[1],
-                "Memory",
-                self.memory_usage,
-                format!(
-                    "{:.1} / {:.1} GB",
-                    self.memory_used_gb, self.memory_total_gb
-                ),
-                egui::Color32::from_rgb(177, 113, 255),
-            );
+            for index in 0..2 {
+                let response = match gauge_order[index] {
+                    GaugeKind::Cpu => {
+                        let accent = columns[index].visuals().hyperlink_color;
+                        resource_card(
+                            &mut columns[index],
+                            "CPU",
+                            self.cpu_usage,
+                            format!("{:.0}% in use", self.cpu_usage),
+                            accent,
+                        )
+                    }
+                    GaugeKind::Memory => resource_card(
+                        &mut columns[index],
+                        "Memory",
+                        self.memory_usage,
+                        format!(
+                            "{:.1} / {:.1} GB",
+                            self.memory_used_gb, self.memory_total_gb
+                        ),
+                        egui::Color32::from_rgb(177, 113, 255),
+                    ),
+                };
+
+                if response.drag.drag_started() {
+                    self.dragging_gauge = Some(gauge_order[index]);
+                }
+
+                card_responses[index] = Some(response);
+            }
         });
+
+        if ui.input(|input| input.pointer.any_released()) {
+            if let (Some(dragging), Some(pointer)) =
+                (self.dragging_gauge, ui.input(|input| input.pointer.hover_pos()))
+            {
+                let source_index = gauge_order.iter().position(|kind| *kind == dragging);
+                let target_index = card_responses.iter().position(|response| {
+                    response
+                        .as_ref()
+                        .is_some_and(|response| response.rect.contains(pointer))
+                });
+
+                if let (Some(source), Some(target)) = (source_index, target_index) {
+                    if source != target {
+                        self.gauge_order.swap(source, target);
+                    }
+                }
+            }
+            self.dragging_gauge = None;
+        }
 
         ui.add_space(14.0);
         settings_card(ui, "Protection components", |ui| {
@@ -1227,18 +1284,38 @@ fn resource_card(
     percentage: f32,
     detail: String,
     color: egui::Color32,
-) {
-    egui::Frame::new()
+) -> GaugeCardResponse {
+    let shown = egui::Frame::new()
         .fill(ui.visuals().faint_bg_color)
         .corner_radius(10.0)
         .inner_margin(18.0)
         .show(ui, |ui| {
+            let drag = ui
+                .add(
+                    egui::Label::new(
+                        egui::RichText::new("⠿  Drag")
+                            .size(11.0)
+                            .color(ui.visuals().weak_text_color()),
+                    )
+                    .sense(egui::Sense::drag()),
+                )
+                .on_hover_cursor(egui::CursorIcon::Grab);
+
+            if drag.dragged() {
+                ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
+            }
+
+            ui.add_space(4.0);
             ui.horizontal(|ui| {
                 let (response, painter) =
                     ui.allocate_painter(egui::vec2(96.0, 96.0), egui::Sense::hover());
                 let center = response.rect.center();
                 let radius = 38.0;
-                let background = egui::Color32::from_rgb(63, 63, 63);
+                let background = if ui.visuals().dark_mode {
+                    egui::Color32::from_rgb(63, 63, 63)
+                } else {
+                    egui::Color32::from_rgb(210, 210, 210)
+                };
 
                 painter.circle_stroke(center, radius, egui::Stroke::new(8.0_f32, background));
 
@@ -1264,7 +1341,7 @@ fn resource_card(
                     egui::Align2::CENTER_CENTER,
                     format!("{:.0}%", percentage),
                     egui::FontId::proportional(21.0),
-                    egui::Color32::WHITE,
+                    ui.visuals().text_color(),
                 );
 
                 ui.add_space(10.0);
@@ -1284,7 +1361,14 @@ fn resource_card(
                     );
                 });
             });
+
+            drag
         });
+
+    GaugeCardResponse {
+        drag: shown.inner,
+        rect: shown.response.rect,
+    }
 }
 
 fn settings_card(ui: &mut egui::Ui, title: &str, add_contents: impl FnOnce(&mut egui::Ui)) {
