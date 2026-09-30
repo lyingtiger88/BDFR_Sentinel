@@ -1,0 +1,9 @@
+[package]
+name = "sentinel-realtime"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+sentinel-core = { path = "../sentinel-core" }
+tracing.workspace = true
