@@ -1,0 +1,9 @@
+[package]
+name = "sentinel-updater"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+semver.workspace = true
+serde.workspace = true
