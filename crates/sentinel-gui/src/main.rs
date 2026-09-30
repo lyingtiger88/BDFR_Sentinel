@@ -687,9 +687,10 @@ impl SentinelApp {
         });
 
         if ui.input(|input| input.pointer.any_released()) {
-            if let (Some(dragging), Some(pointer)) =
-                (self.dragging_gauge, ui.input(|input| input.pointer.hover_pos()))
-            {
+            if let (Some(dragging), Some(pointer)) = (
+                self.dragging_gauge,
+                ui.input(|input| input.pointer.hover_pos()),
+            ) {
                 let source_index = gauge_order.iter().position(|kind| *kind == dragging);
                 let target_index = card_responses.iter().position(|response| {
                     response
