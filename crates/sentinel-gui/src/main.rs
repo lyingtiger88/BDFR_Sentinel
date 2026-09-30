@@ -464,7 +464,7 @@ impl SentinelApp {
                     egui::pos2(x, rect.bottom() - 45.0),
                     egui::pos2(x, rect.bottom() - 9.0),
                 ],
-                egui::Stroke::new(3.0, ACCENT),
+                egui::Stroke::new(3.0_f32, ACCENT),
             );
         }
     }
@@ -782,6 +782,9 @@ impl SentinelApp {
     }
 
     fn settings_page(&mut self, ui: &mut egui::Ui) {
+        let hdb_current = self.hdb_path.clone();
+        let hsb_current = self.hsb_path.clone();
+
         page_header(
             ui,
             "Settings",
@@ -793,7 +796,7 @@ impl SentinelApp {
                 ui,
                 "ClamAV HDB",
                 "MD5-based signature database",
-                self.hdb_path.as_ref(),
+                hdb_current.as_ref(),
                 || {
                     rfd::FileDialog::new()
                         .add_filter("ClamAV HDB", &["hdb"])
@@ -808,7 +811,7 @@ impl SentinelApp {
                 ui,
                 "ClamAV HSB",
                 "SHA-256 signature database",
-                self.hsb_path.as_ref(),
+                hsb_current.as_ref(),
                 || {
                     rfd::FileDialog::new()
                         .add_filter("ClamAV HSB", &["hsb"])
@@ -863,7 +866,6 @@ impl SentinelApp {
             .resizable(true)
             .default_width(620.0)
             .default_height(520.0)
-            .corner_radius(12.0)
             .show(ctx, |ui| {
                 ui.heading(if summary.cancelled {
                     "Scan cancelled"
@@ -1068,7 +1070,7 @@ fn resource_card(
                 let radius = 38.0;
                 let background = egui::Color32::from_rgb(63, 63, 63);
 
-                painter.circle_stroke(center, radius, egui::Stroke::new(8.0, background));
+                painter.circle_stroke(center, radius, egui::Stroke::new(8.0_f32, background));
 
                 let fraction = (percentage / 100.0).clamp(0.0, 1.0);
                 let start = -std::f32::consts::FRAC_PI_2;
@@ -1084,7 +1086,7 @@ fn resource_card(
                     ));
                 }
                 if points.len() > 1 {
-                    painter.line(points, egui::Stroke::new(8.0, color));
+                    painter.line(points, egui::Stroke::new(8.0_f32, color));
                 }
 
                 painter.text(
