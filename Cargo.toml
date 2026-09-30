@@ -25,4 +25,4 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 sha2 = "0.10"
 uuid = { version = "1", features = ["v4", "serde"] }
-semver = "1"
+semver = { version = "1", features = ["serde"] }
