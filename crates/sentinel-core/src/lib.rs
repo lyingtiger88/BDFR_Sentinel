@@ -1,20 +1,11 @@
-use serde::{Deserialize, Serialize};
+mod engine;
+mod error;
+mod model;
+mod scanner;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum ThreatLevel {
-    Clean,
-    Suspicious,
-    Malicious,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ScanVerdict {
-    pub level: ThreatLevel,
-    pub engine: String,
-    pub reason: String,
-}
-
-pub trait ScanEngine: Send + Sync {
-    fn name(&self) -> &'static str;
-    fn scan_bytes(&self, data: &[u8]) -> ScanVerdict;
-}
+pub use engine::{EngineRegistry, ScanEngine};
+pub use error::ScanError;
+pub use model::{
+    Detection, DetectionKind, FileMetadata, ScanReport, ScanVerdict, ThreatLevel,
+};
+pub use scanner::{FileScanner, ScannerConfig};
