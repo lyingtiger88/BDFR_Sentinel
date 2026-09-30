@@ -68,8 +68,7 @@ impl QuarantineStore {
         fs::create_dir_all(&root)?;
 
         let key = key::load_or_create_key(&root)?;
-        let cipher =
-            Aes256Gcm::new_from_slice(&key).map_err(|_| QuarantineError::Crypto)?;
+        let cipher = Aes256Gcm::new_from_slice(&key).map_err(|_| QuarantineError::Crypto)?;
 
         Ok(Self { root, cipher })
     }
@@ -201,10 +200,8 @@ mod tests {
     #[test]
     #[cfg(windows)]
     fn quarantine_round_trip() {
-        let base = std::env::temp_dir().join(format!(
-            "bdfr-sentinel-quarantine-{}",
-            Uuid::new_v4()
-        ));
+        let base =
+            std::env::temp_dir().join(format!("bdfr-sentinel-quarantine-{}", Uuid::new_v4()));
         let source = base.join("sample.bin");
         let store_dir = base.join("store");
 
