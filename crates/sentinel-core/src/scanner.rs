@@ -42,12 +42,11 @@ impl FileScanner {
 
         let mut detections = Vec::new();
         for engine in self.engines.engines() {
-            let mut engine_detections = engine.scan_bytes(&data).map_err(|err| {
-                ScanError::Engine {
+            let mut engine_detections =
+                engine.scan_bytes(&data).map_err(|err| ScanError::Engine {
                     engine: engine.name().to_string(),
                     message: err.to_string(),
-                }
-            })?;
+                })?;
             detections.append(&mut engine_detections);
         }
 
@@ -103,10 +102,8 @@ mod tests {
 
     #[test]
     fn aggregates_engine_detections_and_hashes_file() {
-        let temp = std::env::temp_dir().join(format!(
-            "bdfr-sentinel-test-{}.bin",
-            std::process::id()
-        ));
+        let temp =
+            std::env::temp_dir().join(format!("bdfr-sentinel-test-{}.bin", std::process::id()));
 
         {
             let mut f = fs::File::create(&temp).unwrap();
