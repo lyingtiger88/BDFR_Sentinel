@@ -37,3 +37,4 @@ clap = { version = "4.5", features = ["derive"] }
 walkdir = "2.5"
 eframe = "0.31"
 rfd = "0.15"
+sysinfo = "0.37"
