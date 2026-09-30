@@ -1,0 +1,19 @@
+[package]
+name = "bdfr-sentinel-gui"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "bdfr-sentinel-gui"
+path = "src/main.rs"
+
+[dependencies]
+anyhow.workspace = true
+eframe.workspace = true
+rfd.workspace = true
+walkdir.workspace = true
+sentinel-core = { path = "../sentinel-core" }
+sentinel-definitions = { path = "../sentinel-definitions" }
+sentinel-pe = { path = "../sentinel-pe" }
+sentinel-quarantine = { path = "../sentinel-quarantine" }
