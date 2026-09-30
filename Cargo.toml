@@ -8,6 +8,7 @@ members = [
     "crates/sentinel-yara",
     "crates/sentinel-pe",
     "crates/sentinel-definitions",
+    "crates/sentinel-cli",
 ]
 
 [workspace.package]
@@ -25,8 +26,11 @@ tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "fs", 
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 sha2 = "0.10"
+md-5 = "0.10"
 uuid = { version = "1", features = ["v4", "serde"] }
 semver = { version = "1", features = ["serde"] }
 notify = "8.2.0"
 ed25519-dalek = "2.1"
 base64 = "0.22"
+clap = { version = "4.5", features = ["derive"] }
+walkdir = "2.5"
