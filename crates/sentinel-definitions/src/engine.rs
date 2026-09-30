@@ -1,7 +1,7 @@
 use crate::ClamHashDatabase;
-use md5::{Digest as Md5Digest, Md5};
+use md5::{Digest, Md5};
 use sentinel_core::{Detection, DetectionKind, ScanEngine, ScanError};
-use sha2::{Digest as ShaDigest, Sha256};
+use sha2::Sha256;
 
 #[derive(Debug, Default)]
 pub struct HashDefinitionEngine {
