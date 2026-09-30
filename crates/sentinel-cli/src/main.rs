@@ -74,7 +74,11 @@ fn main() -> Result<()> {
             println!("Policy: crack/license-bypass are non-actionable by default");
             Ok(())
         }
-        Command::Quarantine { path, store, reason } => {
+        Command::Quarantine {
+            path,
+            store,
+            reason,
+        } => {
             let quarantine = QuarantineStore::open(&store)?;
             let entry = quarantine.quarantine_file(&path, reason)?;
             println!("Quarantined: {}", entry.id.0);
@@ -121,9 +125,7 @@ fn scan_command(
     }
 
     let scanner = FileScanner::new(ScannerConfig::default(), registry);
-    let quarantine = quarantine_dir
-        .map(QuarantineStore::open)
-        .transpose()?;
+    let quarantine = quarantine_dir.map(QuarantineStore::open).transpose()?;
 
     if target.is_file() {
         scan_one(
@@ -178,9 +180,7 @@ fn scan_one(
     } else {
         println!(
             "[{:?}] {}  sha256={}",
-            report.verdict.level,
-            report.path,
-            report.metadata.sha256
+            report.verdict.level, report.path, report.metadata.sha256
         );
 
         for detection in &report.verdict.detections {
