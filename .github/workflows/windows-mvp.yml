@@ -14,16 +14,18 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
-      - name: Build release executable
-        run: cargo build --release -p bdfr-sentinel
-      - name: Smoke test
+      - name: Build release executables
+        run: cargo build --release -p bdfr-sentinel -p bdfr-sentinel-gui
+      - name: CLI smoke test
         run: target\release\bdfr-sentinel.exe status
       - name: Package
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path dist | Out-Null
           Copy-Item target\release\bdfr-sentinel.exe dist\bdfr-sentinel.exe
+          Copy-Item target\release\bdfr-sentinel-gui.exe dist\bdfr-sentinel-gui.exe
           Copy-Item README.md dist\README.md
+          if (Test-Path docs\MVP.md) { Copy-Item docs\MVP.md dist\MVP.md }
           Compress-Archive -Path dist\* -DestinationPath BDFR-Sentinel-Windows-x64.zip -Force
       - uses: actions/upload-artifact@v4
         with:
