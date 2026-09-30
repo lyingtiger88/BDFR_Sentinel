@@ -48,9 +48,7 @@ fn main() -> eframe::Result<()> {
     eframe::run_native(
         "BDFR Sentinel",
         options,
-        Box::new(|cc| {
-            Ok(Box::new(SentinelApp::new(&cc.egui_ctx)))
-        }),
+        Box::new(|cc| Ok(Box::new(SentinelApp::new(&cc.egui_ctx)))),
     )
 }
 
@@ -553,7 +551,11 @@ impl SentinelApp {
     fn sidebar(&mut self, ui: &mut egui::Ui) {
         ui.add_space(10.0);
         ui.horizontal(|ui| {
-            ui.label(egui::RichText::new("◈").size(28.0).color(ui.visuals().hyperlink_color));
+            ui.label(
+                egui::RichText::new("◈")
+                    .size(28.0)
+                    .color(ui.visuals().hyperlink_color),
+            );
             ui.vertical(|ui| {
                 ui.label(egui::RichText::new("BDFR Sentinel").size(19.0).strong());
                 ui.label(
@@ -708,7 +710,10 @@ impl SentinelApp {
 
             if let Some(target) = &self.target {
                 ui.add_space(6.0);
-                ui.label(egui::RichText::new(target.display().to_string()).color(ui.visuals().weak_text_color()));
+                ui.label(
+                    egui::RichText::new(target.display().to_string())
+                        .color(ui.visuals().weak_text_color()),
+                );
             }
 
             ui.checkbox(
@@ -760,7 +765,10 @@ impl SentinelApp {
                 .max_height(ui.available_height().max(240.0))
                 .show(ui, |ui| {
                     if self.reports.is_empty() {
-                        ui.label(egui::RichText::new("No scan results yet.").color(ui.visuals().weak_text_color()));
+                        ui.label(
+                            egui::RichText::new("No scan results yet.")
+                                .color(ui.visuals().weak_text_color()),
+                        );
                     }
 
                     for report in self.reports.iter().rev().take(700) {
@@ -789,7 +797,11 @@ impl SentinelApp {
                                         detection.category, detection.level, detection.title
                                     ));
                                     if let Some(details) = &detection.details {
-                                        ui.label(egui::RichText::new(details).small().color(ui.visuals().weak_text_color()));
+                                        ui.label(
+                                            egui::RichText::new(details)
+                                                .small()
+                                                .color(ui.visuals().weak_text_color()),
+                                        );
                                     }
                                 }
                             }
@@ -809,7 +821,8 @@ impl SentinelApp {
         settings_card(ui, "Quarantine store", |ui| {
             ui.horizontal(|ui| {
                 ui.label(
-                    egui::RichText::new(self.quarantine_dir.display().to_string()).color(ui.visuals().weak_text_color()),
+                    egui::RichText::new(self.quarantine_dir.display().to_string())
+                        .color(ui.visuals().weak_text_color()),
                 );
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     if fluent_button(ui, "Refresh", false).clicked() {
@@ -825,7 +838,10 @@ impl SentinelApp {
         egui::ScrollArea::vertical().show(ui, |ui| {
             if entries.is_empty() {
                 settings_card(ui, "No quarantined items", |ui| {
-                    ui.label(egui::RichText::new("The quarantine store is empty.").color(ui.visuals().weak_text_color()));
+                    ui.label(
+                        egui::RichText::new("The quarantine store is empty.")
+                            .color(ui.visuals().weak_text_color()),
+                    );
                 });
             }
 
@@ -847,7 +863,10 @@ impl SentinelApp {
                             .size(11.0)
                             .color(ui.visuals().weak_text_color()),
                         );
-                        ui.label(egui::RichText::new(&entry.reason).color(ui.visuals().weak_text_color()));
+                        ui.label(
+                            egui::RichText::new(&entry.reason)
+                                .color(ui.visuals().weak_text_color()),
+                        );
                         ui.add_space(6.0);
                         ui.horizontal(|ui| {
                             if fluent_button(ui, "Restore", false).clicked() {
@@ -884,7 +903,11 @@ impl SentinelApp {
                 .selected_text(selected.label())
                 .width(180.0)
                 .show_ui(ui, |ui| {
-                    ui.selectable_value(&mut selected, ThemeMode::System, ThemeMode::System.label());
+                    ui.selectable_value(
+                        &mut selected,
+                        ThemeMode::System,
+                        ThemeMode::System.label(),
+                    );
                     ui.selectable_value(&mut selected, ThemeMode::Dark, ThemeMode::Dark.label());
                     ui.selectable_value(&mut selected, ThemeMode::Light, ThemeMode::Light.label());
                 });
@@ -987,7 +1010,9 @@ impl SentinelApp {
                 } else {
                     "Scan completed"
                 });
-                ui.label(egui::RichText::new(&summary.target).color(ui.visuals().weak_text_color()));
+                ui.label(
+                    egui::RichText::new(&summary.target).color(ui.visuals().weak_text_color()),
+                );
                 ui.add_space(12.0);
 
                 ui.horizontal_wrapped(|ui| {
@@ -1152,7 +1177,11 @@ fn collect_scan_targets(target: &Path, cancel: &AtomicBool) -> Vec<PathBuf> {
 
 fn page_header(ui: &mut egui::Ui, title: &str, subtitle: &str) {
     ui.label(egui::RichText::new(title).size(30.0).strong());
-    ui.label(egui::RichText::new(subtitle).size(13.0).color(ui.visuals().weak_text_color()));
+    ui.label(
+        egui::RichText::new(subtitle)
+            .size(13.0)
+            .color(ui.visuals().weak_text_color()),
+    );
     ui.add_space(18.0);
 }
 
@@ -1169,7 +1198,11 @@ fn metric_card(ui: &mut egui::Ui, title: &str, value: usize, color: egui::Color3
                     .strong()
                     .color(color),
             );
-            ui.label(egui::RichText::new(title).size(12.0).color(ui.visuals().weak_text_color()));
+            ui.label(
+                egui::RichText::new(title)
+                    .size(12.0)
+                    .color(ui.visuals().weak_text_color()),
+            );
         });
 }
 
@@ -1223,7 +1256,11 @@ fn resource_card(
                 ui.vertical(|ui| {
                     ui.add_space(15.0);
                     ui.label(egui::RichText::new(title).size(17.0).strong());
-                    ui.label(egui::RichText::new(detail).size(12.0).color(ui.visuals().weak_text_color()));
+                    ui.label(
+                        egui::RichText::new(detail)
+                            .size(12.0)
+                            .color(ui.visuals().weak_text_color()),
+                    );
                     ui.add_space(6.0);
                     ui.label(
                         egui::RichText::new("Live system usage")
@@ -1296,7 +1333,11 @@ fn setting_picker(
     ui.horizontal(|ui| {
         ui.vertical(|ui| {
             ui.label(egui::RichText::new(title).strong());
-            ui.label(egui::RichText::new(subtitle).size(11.0).color(ui.visuals().weak_text_color()));
+            ui.label(
+                egui::RichText::new(subtitle)
+                    .size(11.0)
+                    .color(ui.visuals().weak_text_color()),
+            );
             if let Some(path) = current {
                 ui.label(
                     egui::RichText::new(path.display().to_string())
