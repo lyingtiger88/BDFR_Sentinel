@@ -61,7 +61,9 @@ pub struct UpdateVerifier {
 
 impl UpdateVerifier {
     pub fn from_public_key_bytes(bytes: &[u8]) -> Result<Self, VerifyError> {
-        let key_bytes: [u8; 32] = bytes.try_into().map_err(|_| VerifyError::InvalidPublicKey)?;
+        let key_bytes: [u8; 32] = bytes
+            .try_into()
+            .map_err(|_| VerifyError::InvalidPublicKey)?;
         let key =
             VerifyingKey::from_bytes(&key_bytes).map_err(|_| VerifyError::InvalidPublicKey)?;
         Ok(Self { key })
@@ -99,10 +101,8 @@ mod tests {
     #[test]
     fn verifies_signed_manifest() {
         let signing = SigningKey::from_bytes(&[7u8; 32]);
-        let verifier = UpdateVerifier::from_public_key_bytes(
-            signing.verifying_key().as_bytes(),
-        )
-        .unwrap();
+        let verifier =
+            UpdateVerifier::from_public_key_bytes(signing.verifying_key().as_bytes()).unwrap();
 
         let mut manifest = UpdateManifest {
             schema_version: 1,
