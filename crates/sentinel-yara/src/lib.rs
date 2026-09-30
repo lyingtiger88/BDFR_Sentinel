@@ -32,10 +32,13 @@ where
     }
 
     fn scan_bytes(&self, data: &[u8]) -> Result<Vec<Detection>, ScanError> {
-        let matches = self.backend.scan(data).map_err(|message| ScanError::Engine {
-            engine: self.name().to_string(),
-            message,
-        })?;
+        let matches = self
+            .backend
+            .scan(data)
+            .map_err(|message| ScanError::Engine {
+                engine: self.name().to_string(),
+                message,
+            })?;
 
         Ok(matches
             .into_iter()
