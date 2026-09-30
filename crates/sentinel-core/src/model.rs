@@ -17,11 +17,31 @@ pub enum DetectionKind {
     Other(String),
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum DetectionCategory {
+    Malware,
+    Ransomware,
+    Trojan,
+    Worm,
+    Backdoor,
+    Rootkit,
+    Spyware,
+    Adware,
+    PotentiallyUnwanted,
+    Riskware,
+    HackTool,
+    Crack,
+    LicenseBypass,
+    Test,
+    Unknown,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Detection {
     pub engine: String,
     pub rule_id: Option<String>,
     pub kind: DetectionKind,
+    pub category: DetectionCategory,
     pub level: ThreatLevel,
     pub title: String,
     pub details: Option<String>,
