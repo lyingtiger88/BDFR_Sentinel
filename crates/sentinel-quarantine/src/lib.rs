@@ -146,6 +146,27 @@ impl QuarantineStore {
         Ok(serde_json::from_slice(&encoded)?)
     }
 
+    pub fn list_entries(&self) -> Result<Vec<QuarantineEntry>, QuarantineError> {
+        let mut entries = Vec::new();
+
+        for item in fs::read_dir(&self.root)? {
+            let item = item?;
+            let path = item.path();
+
+            if path.extension().and_then(|ext| ext.to_str()) != Some("json") {
+                continue;
+            }
+
+            let encoded = fs::read(&path)?;
+            if let Ok(entry) = serde_json::from_slice::<QuarantineEntry>(&encoded) {
+                entries.push(entry);
+            }
+        }
+
+        entries.sort_by(|a, b| a.original_path.cmp(&b.original_path));
+        Ok(entries)
+    }
+
     fn decrypt_blob(&self, blob: &[u8]) -> Result<Vec<u8>, QuarantineError> {
         if blob.len() <= MAGIC.len() + 12 || &blob[..MAGIC.len()] != MAGIC {
             return Err(QuarantineError::InvalidBlob);
