@@ -136,9 +136,7 @@ mod tests {
         .unwrap();
 
         assert_eq!(db.len(), 1);
-        let entry = db
-            .lookup_hash("0123456789abcdef0123456789abcdef")
-            .unwrap();
+        let entry = db.lookup_hash("0123456789abcdef0123456789abcdef").unwrap();
         assert_eq!(entry.category, DetectionCategory::Crack);
     }
 
