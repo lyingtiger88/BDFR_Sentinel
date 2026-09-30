@@ -245,7 +245,6 @@ impl SentinelApp {
         }
     }
 
-
     fn refresh_metrics(&mut self) {
         if self.last_metrics_refresh.elapsed() < Duration::from_millis(900) {
             return;
