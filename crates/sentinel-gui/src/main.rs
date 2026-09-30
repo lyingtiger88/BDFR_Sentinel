@@ -15,15 +15,26 @@ use std::time::{Duration, Instant};
 use sysinfo::System;
 use walkdir::WalkDir;
 
-const ACCENT: egui::Color32 = egui::Color32::from_rgb(96, 205, 255);
-const PANEL: egui::Color32 = egui::Color32::from_rgb(38, 38, 38);
-const PANEL_HOVER: egui::Color32 = egui::Color32::from_rgb(47, 47, 47);
-const BG: egui::Color32 = egui::Color32::from_rgb(31, 31, 31);
-const SIDEBAR: egui::Color32 = egui::Color32::from_rgb(27, 27, 27);
-const MUTED: egui::Color32 = egui::Color32::from_rgb(172, 172, 172);
-const GOOD: egui::Color32 = egui::Color32::from_rgb(108, 203, 95);
-const WARN: egui::Color32 = egui::Color32::from_rgb(255, 185, 0);
-const BAD: egui::Color32 = egui::Color32::from_rgb(255, 99, 88);
+const GOOD: egui::Color32 = egui::Color32::from_rgb(60, 170, 75);
+const WARN: egui::Color32 = egui::Color32::from_rgb(230, 145, 0);
+const BAD: egui::Color32 = egui::Color32::from_rgb(210, 55, 45);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ThemeMode {
+    System,
+    Dark,
+    Light,
+}
+
+impl ThemeMode {
+    fn label(self) -> &'static str {
+        match self {
+            Self::System => "System default",
+            Self::Dark => "Dark",
+            Self::Light => "Light",
+        }
+    }
+}
 
 fn main() -> eframe::Result<()> {
     let options = eframe::NativeOptions {
@@ -38,34 +49,87 @@ fn main() -> eframe::Result<()> {
         "BDFR Sentinel",
         options,
         Box::new(|cc| {
-            configure_style(&cc.egui_ctx);
-            Ok(Box::new(SentinelApp::new()))
+            Ok(Box::new(SentinelApp::new(&cc.egui_ctx)))
         }),
     )
 }
 
-fn configure_style(ctx: &egui::Context) {
+fn resolved_theme(ctx: &egui::Context, mode: ThemeMode) -> egui::Theme {
+    match mode {
+        ThemeMode::Dark => egui::Theme::Dark,
+        ThemeMode::Light => egui::Theme::Light,
+        ThemeMode::System => ctx.system_theme().unwrap_or(egui::Theme::Dark),
+    }
+}
+
+fn configure_style(ctx: &egui::Context, mode: ThemeMode) {
+    let theme = resolved_theme(ctx, mode);
+    ctx.set_theme(theme);
+
+    let dark = theme == egui::Theme::Dark;
     let mut style = (*ctx.style()).clone();
     style.spacing.item_spacing = egui::vec2(10.0, 10.0);
     style.spacing.button_padding = egui::vec2(16.0, 10.0);
     style.spacing.indent = 18.0;
-    style.visuals = egui::Visuals::dark();
-    style.visuals.panel_fill = BG;
-    style.visuals.window_fill = PANEL;
-    style.visuals.extreme_bg_color = egui::Color32::from_rgb(23, 23, 23);
-    style.visuals.faint_bg_color = PANEL;
-    style.visuals.widgets.noninteractive.bg_fill = PANEL;
+    style.visuals = if dark {
+        egui::Visuals::dark()
+    } else {
+        egui::Visuals::light()
+    };
+
+    let panel = if dark {
+        egui::Color32::from_rgb(38, 38, 38)
+    } else {
+        egui::Color32::from_rgb(250, 250, 250)
+    };
+    let panel_hover = if dark {
+        egui::Color32::from_rgb(50, 50, 50)
+    } else {
+        egui::Color32::from_rgb(238, 238, 238)
+    };
+    let background = if dark {
+        egui::Color32::from_rgb(31, 31, 31)
+    } else {
+        egui::Color32::from_rgb(243, 243, 243)
+    };
+    let sidebar = if dark {
+        egui::Color32::from_rgb(27, 27, 27)
+    } else {
+        egui::Color32::from_rgb(248, 248, 248)
+    };
+    let text = if dark {
+        egui::Color32::from_rgb(245, 245, 245)
+    } else {
+        egui::Color32::from_rgb(28, 28, 28)
+    };
+    let accent = if dark {
+        egui::Color32::from_rgb(96, 205, 255)
+    } else {
+        egui::Color32::from_rgb(0, 95, 184)
+    };
+
+    style.visuals.panel_fill = background;
+    style.visuals.window_fill = panel;
+    style.visuals.extreme_bg_color = sidebar;
+    style.visuals.faint_bg_color = panel;
+    style.visuals.override_text_color = Some(text);
+    style.visuals.widgets.noninteractive.bg_fill = panel;
+    style.visuals.widgets.noninteractive.fg_stroke.color = text;
     style.visuals.widgets.noninteractive.corner_radius = egui::CornerRadius::same(8);
-    style.visuals.widgets.inactive.bg_fill = PANEL;
-    style.visuals.widgets.inactive.weak_bg_fill = PANEL;
+    style.visuals.widgets.inactive.bg_fill = panel;
+    style.visuals.widgets.inactive.weak_bg_fill = panel;
+    style.visuals.widgets.inactive.fg_stroke.color = text;
     style.visuals.widgets.inactive.corner_radius = egui::CornerRadius::same(8);
-    style.visuals.widgets.hovered.bg_fill = PANEL_HOVER;
-    style.visuals.widgets.hovered.weak_bg_fill = PANEL_HOVER;
+    style.visuals.widgets.hovered.bg_fill = panel_hover;
+    style.visuals.widgets.hovered.weak_bg_fill = panel_hover;
+    style.visuals.widgets.hovered.fg_stroke.color = text;
     style.visuals.widgets.hovered.corner_radius = egui::CornerRadius::same(8);
-    style.visuals.widgets.active.bg_fill = egui::Color32::from_rgb(56, 56, 56);
+    style.visuals.widgets.active.bg_fill = panel_hover;
+    style.visuals.widgets.active.fg_stroke.color = text;
     style.visuals.widgets.active.corner_radius = egui::CornerRadius::same(8);
-    style.visuals.selection.bg_fill = egui::Color32::from_rgb(0, 95, 184);
-    style.visuals.hyperlink_color = ACCENT;
+    style.visuals.selection.bg_fill = accent;
+    style.visuals.hyperlink_color = accent;
+
     ctx.set_style(style);
 }
 
@@ -125,11 +189,16 @@ struct SentinelApp {
     memory_usage: f32,
     memory_used_gb: f64,
     memory_total_gb: f64,
+    theme_mode: ThemeMode,
+    applied_theme: egui::Theme,
 }
 
 impl SentinelApp {
-    fn new() -> Self {
+    fn new(ctx: &egui::Context) -> Self {
         let quarantine_dir = default_quarantine_dir();
+        let theme_mode = ThemeMode::System;
+        configure_style(ctx, theme_mode);
+        let applied_theme = resolved_theme(ctx, theme_mode);
         let mut system = System::new_all();
         system.refresh_cpu_usage();
         system.refresh_memory();
@@ -162,10 +231,26 @@ impl SentinelApp {
             memory_usage: 0.0,
             memory_used_gb: 0.0,
             memory_total_gb: 0.0,
+            theme_mode,
+            applied_theme,
         };
         app.refresh_quarantine();
         app.refresh_metrics();
         app
+    }
+
+    fn refresh_theme(&mut self, ctx: &egui::Context) {
+        let resolved = resolved_theme(ctx, self.theme_mode);
+        if resolved != self.applied_theme {
+            configure_style(ctx, self.theme_mode);
+            self.applied_theme = resolved;
+        }
+    }
+
+    fn set_theme_mode(&mut self, ctx: &egui::Context, mode: ThemeMode) {
+        self.theme_mode = mode;
+        configure_style(ctx, mode);
+        self.applied_theme = resolved_theme(ctx, mode);
     }
 
     fn refresh_metrics(&mut self) {
@@ -435,15 +520,11 @@ impl SentinelApp {
         let selected = self.page == page;
         let text = egui::RichText::new(format!("{icon}   {label}"))
             .size(17.0)
-            .color(if selected {
-                egui::Color32::WHITE
-            } else {
-                egui::Color32::from_rgb(225, 225, 225)
-            });
+            .color(ui.visuals().text_color());
 
         let button = egui::Button::new(text)
             .fill(if selected {
-                egui::Color32::from_rgb(49, 49, 49)
+                ui.visuals().widgets.active.bg_fill
             } else {
                 egui::Color32::TRANSPARENT
             })
@@ -464,7 +545,7 @@ impl SentinelApp {
                     egui::pos2(x, rect.bottom() - 45.0),
                     egui::pos2(x, rect.bottom() - 9.0),
                 ],
-                egui::Stroke::new(3.0_f32, ACCENT),
+                egui::Stroke::new(3.0_f32, ui.visuals().hyperlink_color),
             );
         }
     }
@@ -472,13 +553,13 @@ impl SentinelApp {
     fn sidebar(&mut self, ui: &mut egui::Ui) {
         ui.add_space(10.0);
         ui.horizontal(|ui| {
-            ui.label(egui::RichText::new("◈").size(28.0).color(ACCENT));
+            ui.label(egui::RichText::new("◈").size(28.0).color(ui.visuals().hyperlink_color));
             ui.vertical(|ui| {
                 ui.label(egui::RichText::new("BDFR Sentinel").size(19.0).strong());
                 ui.label(
                     egui::RichText::new("Endpoint Security")
                         .size(12.0)
-                        .color(MUTED),
+                        .color(ui.visuals().weak_text_color()),
                 );
             });
         });
@@ -494,12 +575,12 @@ impl SentinelApp {
             ui.label(
                 egui::RichText::new(format!("Version {}", env!("CARGO_PKG_VERSION")))
                     .size(11.0)
-                    .color(MUTED),
+                    .color(ui.visuals().weak_text_color()),
             );
             ui.label(
                 egui::RichText::new("Crack/license-bypass ignored by default")
                     .size(11.0)
-                    .color(MUTED),
+                    .color(ui.visuals().weak_text_color()),
             );
         });
     }
@@ -512,7 +593,7 @@ impl SentinelApp {
         );
 
         egui::Frame::new()
-            .fill(PANEL)
+            .fill(ui.visuals().faint_bg_color)
             .corner_radius(12.0)
             .inner_margin(20.0)
             .show(ui, |ui| {
@@ -524,7 +605,7 @@ impl SentinelApp {
                             egui::RichText::new(
                                 "BDFR Sentinel core protection components are ready.",
                             )
-                            .color(MUTED),
+                            .color(ui.visuals().weak_text_color()),
                         );
                     });
                 });
@@ -627,7 +708,7 @@ impl SentinelApp {
 
             if let Some(target) = &self.target {
                 ui.add_space(6.0);
-                ui.label(egui::RichText::new(target.display().to_string()).color(MUTED));
+                ui.label(egui::RichText::new(target.display().to_string()).color(ui.visuals().weak_text_color()));
             }
 
             ui.checkbox(
@@ -659,7 +740,7 @@ impl SentinelApp {
                     ui.label(
                         egui::RichText::new(format!("Scanning: {}", current.display()))
                             .size(12.0)
-                            .color(MUTED),
+                            .color(ui.visuals().weak_text_color()),
                     );
                 }
 
@@ -679,7 +760,7 @@ impl SentinelApp {
                 .max_height(ui.available_height().max(240.0))
                 .show(ui, |ui| {
                     if self.reports.is_empty() {
-                        ui.label(egui::RichText::new("No scan results yet.").color(MUTED));
+                        ui.label(egui::RichText::new("No scan results yet.").color(ui.visuals().weak_text_color()));
                     }
 
                     for report in self.reports.iter().rev().take(700) {
@@ -708,7 +789,7 @@ impl SentinelApp {
                                         detection.category, detection.level, detection.title
                                     ));
                                     if let Some(details) = &detection.details {
-                                        ui.label(egui::RichText::new(details).small().color(MUTED));
+                                        ui.label(egui::RichText::new(details).small().color(ui.visuals().weak_text_color()));
                                     }
                                 }
                             }
@@ -728,7 +809,7 @@ impl SentinelApp {
         settings_card(ui, "Quarantine store", |ui| {
             ui.horizontal(|ui| {
                 ui.label(
-                    egui::RichText::new(self.quarantine_dir.display().to_string()).color(MUTED),
+                    egui::RichText::new(self.quarantine_dir.display().to_string()).color(ui.visuals().weak_text_color()),
                 );
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     if fluent_button(ui, "Refresh", false).clicked() {
@@ -744,13 +825,13 @@ impl SentinelApp {
         egui::ScrollArea::vertical().show(ui, |ui| {
             if entries.is_empty() {
                 settings_card(ui, "No quarantined items", |ui| {
-                    ui.label(egui::RichText::new("The quarantine store is empty.").color(MUTED));
+                    ui.label(egui::RichText::new("The quarantine store is empty.").color(ui.visuals().weak_text_color()));
                 });
             }
 
             for entry in entries {
                 egui::Frame::new()
-                    .fill(PANEL)
+                    .fill(ui.visuals().faint_bg_color)
                     .corner_radius(10.0)
                     .inner_margin(16.0)
                     .outer_margin(egui::Margin::symmetric(0, 5))
@@ -764,9 +845,9 @@ impl SentinelApp {
                                 entry.original_size, entry.original_sha256
                             ))
                             .size(11.0)
-                            .color(MUTED),
+                            .color(ui.visuals().weak_text_color()),
                         );
-                        ui.label(egui::RichText::new(&entry.reason).color(MUTED));
+                        ui.label(egui::RichText::new(&entry.reason).color(ui.visuals().weak_text_color()));
                         ui.add_space(6.0);
                         ui.horizontal(|ui| {
                             if fluent_button(ui, "Restore", false).clicked() {
@@ -790,6 +871,40 @@ impl SentinelApp {
             "Settings",
             "Configure definition sources and detection behavior.",
         );
+
+        settings_card(ui, "Appearance", |ui| {
+            ui.label(
+                egui::RichText::new("Choose how BDFR Sentinel should look.")
+                    .color(ui.visuals().weak_text_color()),
+            );
+            ui.add_space(6.0);
+
+            let mut selected = self.theme_mode;
+            egui::ComboBox::from_id_salt("theme_mode")
+                .selected_text(selected.label())
+                .width(180.0)
+                .show_ui(ui, |ui| {
+                    ui.selectable_value(&mut selected, ThemeMode::System, ThemeMode::System.label());
+                    ui.selectable_value(&mut selected, ThemeMode::Dark, ThemeMode::Dark.label());
+                    ui.selectable_value(&mut selected, ThemeMode::Light, ThemeMode::Light.label());
+                });
+
+            if selected != self.theme_mode {
+                self.theme_mode = selected;
+            }
+
+            ui.label(
+                egui::RichText::new(match self.theme_mode {
+                    ThemeMode::System => "Follows the current Windows light/dark appearance.",
+                    ThemeMode::Dark => "Uses the dark Fluent palette.",
+                    ThemeMode::Light => "Uses the light Fluent palette.",
+                })
+                .size(11.0)
+                .color(ui.visuals().weak_text_color()),
+            );
+        });
+
+        ui.add_space(14.0);
 
         settings_card(ui, "Definition sources", |ui| {
             setting_picker(
@@ -830,9 +945,9 @@ impl SentinelApp {
                 egui::RichText::new(
                     "Crack and license-bypass classifications are ignored by default.",
                 )
-                .color(MUTED),
+                .color(ui.visuals().weak_text_color()),
             );
-            ui.label(egui::RichText::new("A cracked file is still detected if it independently matches malware indicators.").color(MUTED));
+            ui.label(egui::RichText::new("A cracked file is still detected if it independently matches malware indicators.").color(ui.visuals().weak_text_color()));
         });
 
         ui.add_space(14.0);
@@ -872,7 +987,7 @@ impl SentinelApp {
                 } else {
                     "Scan completed"
                 });
-                ui.label(egui::RichText::new(&summary.target).color(MUTED));
+                ui.label(egui::RichText::new(&summary.target).color(ui.visuals().weak_text_color()));
                 ui.add_space(12.0);
 
                 ui.horizontal_wrapped(|ui| {
@@ -940,6 +1055,7 @@ impl SentinelApp {
 impl eframe::App for SentinelApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.poll_scan();
+        self.refresh_theme(ctx);
         self.refresh_metrics();
 
         if self.scanning {
@@ -948,17 +1064,23 @@ impl eframe::App for SentinelApp {
             ctx.request_repaint_after(Duration::from_millis(900));
         }
 
+        let visuals = ctx.style().visuals.clone();
+
         egui::SidePanel::left("sidebar")
             .resizable(false)
             .exact_width(250.0)
-            .frame(egui::Frame::new().fill(SIDEBAR).inner_margin(16.0))
+            .frame(
+                egui::Frame::new()
+                    .fill(visuals.extreme_bg_color)
+                    .inner_margin(16.0),
+            )
             .show(ctx, |ui| self.sidebar(ui));
 
         egui::TopBottomPanel::bottom("status")
             .resizable(false)
             .frame(
                 egui::Frame::new()
-                    .fill(SIDEBAR)
+                    .fill(visuals.extreme_bg_color)
                     .inner_margin(egui::Margin::symmetric(18, 8)),
             )
             .show(ctx, |ui| {
@@ -971,18 +1093,18 @@ impl eframe::App for SentinelApp {
                     ui.label(
                         egui::RichText::new(&self.status_text)
                             .size(12.0)
-                            .color(MUTED),
+                            .color(ui.visuals().weak_text_color()),
                     );
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         ui.label(
                             egui::RichText::new(format!("RAM {:.0}%", self.memory_usage))
                                 .size(11.0)
-                                .color(MUTED),
+                                .color(ui.visuals().weak_text_color()),
                         );
                         ui.label(
                             egui::RichText::new(format!("CPU {:.0}%", self.cpu_usage))
                                 .size(11.0)
-                                .color(MUTED),
+                                .color(ui.visuals().weak_text_color()),
                         );
                     });
                 });
@@ -991,7 +1113,7 @@ impl eframe::App for SentinelApp {
         egui::CentralPanel::default()
             .frame(
                 egui::Frame::new()
-                    .fill(BG)
+                    .fill(visuals.panel_fill)
                     .inner_margin(egui::Margin::same(28)),
             )
             .show(ctx, |ui| match self.page {
@@ -1030,13 +1152,13 @@ fn collect_scan_targets(target: &Path, cancel: &AtomicBool) -> Vec<PathBuf> {
 
 fn page_header(ui: &mut egui::Ui, title: &str, subtitle: &str) {
     ui.label(egui::RichText::new(title).size(30.0).strong());
-    ui.label(egui::RichText::new(subtitle).size(13.0).color(MUTED));
+    ui.label(egui::RichText::new(subtitle).size(13.0).color(ui.visuals().weak_text_color()));
     ui.add_space(18.0);
 }
 
 fn metric_card(ui: &mut egui::Ui, title: &str, value: usize, color: egui::Color32) {
     egui::Frame::new()
-        .fill(PANEL)
+        .fill(ui.visuals().faint_bg_color)
         .corner_radius(10.0)
         .inner_margin(16.0)
         .show(ui, |ui| {
@@ -1047,7 +1169,7 @@ fn metric_card(ui: &mut egui::Ui, title: &str, value: usize, color: egui::Color3
                     .strong()
                     .color(color),
             );
-            ui.label(egui::RichText::new(title).size(12.0).color(MUTED));
+            ui.label(egui::RichText::new(title).size(12.0).color(ui.visuals().weak_text_color()));
         });
 }
 
@@ -1059,7 +1181,7 @@ fn resource_card(
     color: egui::Color32,
 ) {
     egui::Frame::new()
-        .fill(PANEL)
+        .fill(ui.visuals().faint_bg_color)
         .corner_radius(10.0)
         .inner_margin(18.0)
         .show(ui, |ui| {
@@ -1101,7 +1223,7 @@ fn resource_card(
                 ui.vertical(|ui| {
                     ui.add_space(15.0);
                     ui.label(egui::RichText::new(title).size(17.0).strong());
-                    ui.label(egui::RichText::new(detail).size(12.0).color(MUTED));
+                    ui.label(egui::RichText::new(detail).size(12.0).color(ui.visuals().weak_text_color()));
                     ui.add_space(6.0);
                     ui.label(
                         egui::RichText::new("Live system usage")
@@ -1115,7 +1237,7 @@ fn resource_card(
 
 fn settings_card(ui: &mut egui::Ui, title: &str, add_contents: impl FnOnce(&mut egui::Ui)) {
     egui::Frame::new()
-        .fill(PANEL)
+        .fill(ui.visuals().faint_bg_color)
         .corner_radius(10.0)
         .inner_margin(18.0)
         .show(ui, |ui| {
@@ -1136,13 +1258,27 @@ fn status_row(ui: &mut egui::Ui, name: &str, status: &str, color: egui::Color32)
 
 fn fluent_button(ui: &mut egui::Ui, label: &str, destructive: bool) -> egui::Response {
     let fill = if destructive {
-        egui::Color32::from_rgb(92, 35, 35)
+        if ui.visuals().dark_mode {
+            egui::Color32::from_rgb(92, 35, 35)
+        } else {
+            egui::Color32::from_rgb(252, 225, 223)
+        }
     } else {
-        egui::Color32::from_rgb(54, 54, 54)
+        ui.visuals().widgets.inactive.bg_fill
+    };
+
+    let text_color = if destructive {
+        if ui.visuals().dark_mode {
+            egui::Color32::from_rgb(255, 205, 201)
+        } else {
+            egui::Color32::from_rgb(130, 25, 20)
+        }
+    } else {
+        ui.visuals().text_color()
     };
 
     ui.add(
-        egui::Button::new(egui::RichText::new(label).size(14.0))
+        egui::Button::new(egui::RichText::new(label).size(14.0).color(text_color))
             .fill(fill)
             .corner_radius(8.0)
             .min_size(egui::vec2(104.0, 40.0)),
@@ -1160,12 +1296,12 @@ fn setting_picker(
     ui.horizontal(|ui| {
         ui.vertical(|ui| {
             ui.label(egui::RichText::new(title).strong());
-            ui.label(egui::RichText::new(subtitle).size(11.0).color(MUTED));
+            ui.label(egui::RichText::new(subtitle).size(11.0).color(ui.visuals().weak_text_color()));
             if let Some(path) = current {
                 ui.label(
                     egui::RichText::new(path.display().to_string())
                         .size(11.0)
-                        .color(ACCENT),
+                        .color(ui.visuals().hyperlink_color),
                 );
             }
         });
