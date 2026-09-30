@@ -1062,24 +1062,52 @@ fn resource_card(
         .inner_margin(18.0)
         .show(ui, |ui| {
             ui.horizontal(|ui| {
-                ui.label(egui::RichText::new(title).size(16.0).strong());
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                let (response, painter) =
+                    ui.allocate_painter(egui::vec2(96.0, 96.0), egui::Sense::hover());
+                let center = response.rect.center();
+                let radius = 38.0;
+                let background = egui::Color32::from_rgb(63, 63, 63);
+
+                painter.circle_stroke(center, radius, egui::Stroke::new(8.0, background));
+
+                let fraction = (percentage / 100.0).clamp(0.0, 1.0);
+                let start = -std::f32::consts::FRAC_PI_2;
+                let end = start + std::f32::consts::TAU * fraction;
+                let segments = 64;
+                let mut points = Vec::with_capacity(segments + 1);
+                for i in 0..=segments {
+                    let t = i as f32 / segments as f32;
+                    let angle = start + (end - start) * t;
+                    points.push(egui::pos2(
+                        center.x + angle.cos() * radius,
+                        center.y + angle.sin() * radius,
+                    ));
+                }
+                if points.len() > 1 {
+                    painter.line(points, egui::Stroke::new(8.0, color));
+                }
+
+                painter.text(
+                    center,
+                    egui::Align2::CENTER_CENTER,
+                    format!("{:.0}%", percentage),
+                    egui::FontId::proportional(21.0),
+                    egui::Color32::WHITE,
+                );
+
+                ui.add_space(10.0);
+                ui.vertical(|ui| {
+                    ui.add_space(15.0);
+                    ui.label(egui::RichText::new(title).size(17.0).strong());
+                    ui.label(egui::RichText::new(detail).size(12.0).color(MUTED));
+                    ui.add_space(6.0);
                     ui.label(
-                        egui::RichText::new(format!("{:.0}%", percentage))
-                            .size(22.0)
-                            .strong()
+                        egui::RichText::new("Live system usage")
+                            .size(11.0)
                             .color(color),
                     );
                 });
             });
-            ui.add_space(5.0);
-            ui.add(
-                egui::ProgressBar::new((percentage / 100.0).clamp(0.0, 1.0))
-                    .desired_width(f32::INFINITY)
-                    .fill(color)
-                    .show_percentage(),
-            );
-            ui.label(egui::RichText::new(detail).size(11.0).color(MUTED));
         });
 }
 
