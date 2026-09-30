@@ -8,14 +8,16 @@
 - [ ] Threat model
 
 ## Phase 1 — Safe MVP
-- [ ] Core scan orchestration
-- [ ] YARA engine abstraction
-- [ ] Real-time filesystem monitor
-- [ ] Secure quarantine
-- [ ] Signed update manifests
+- [x] Core scan orchestration
+- [x] YARA engine abstraction
+- [x] Real-time filesystem monitor
+- [x] Secure quarantine
+- [x] Signed update manifests
 - [ ] PE metadata analyzer
 - [ ] Windows service host
 - [ ] Structured logging
+- [x] Detection policy separating malware from crack/license-bypass classifications
+- [x] Multi-source definition provider architecture
 
 ## Phase 2 — Endpoint Telemetry
 - [ ] ETW event ingestion
@@ -37,6 +39,7 @@
 - [ ] Ransomware heuristics
 - [ ] Memory scan interfaces
 - [ ] Rule packs and update channels
+- [ ] Additional licensed/open definition adapters
 
 ## Phase 5 — Productization
 - [ ] Tauri UI
