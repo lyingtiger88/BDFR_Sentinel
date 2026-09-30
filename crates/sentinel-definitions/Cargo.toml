@@ -9,3 +9,4 @@ sentinel-core = { path = "../sentinel-core" }
 serde.workspace = true
 thiserror.workspace = true
 sha2.workspace = true
+md-5.workspace = true
