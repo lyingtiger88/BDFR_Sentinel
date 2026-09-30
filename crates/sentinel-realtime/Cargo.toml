@@ -7,3 +7,5 @@ license.workspace = true
 [dependencies]
 sentinel-core = { path = "../sentinel-core" }
 tracing.workspace = true
+thiserror.workspace = true
+notify.workspace = true
