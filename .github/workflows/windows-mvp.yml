@@ -1,0 +1,30 @@
+name: Windows MVP Artifact
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build release executable
+        run: cargo build --release -p bdfr-sentinel
+      - name: Smoke test
+        run: target\release\bdfr-sentinel.exe status
+      - name: Package
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          Copy-Item target\release\bdfr-sentinel.exe dist\bdfr-sentinel.exe
+          Copy-Item README.md dist\README.md
+          Compress-Archive -Path dist\* -DestinationPath BDFR-Sentinel-Windows-x64.zip -Force
+      - uses: actions/upload-artifact@v4
+        with:
+          name: BDFR-Sentinel-Windows-x64
+          path: BDFR-Sentinel-Windows-x64.zip
+          if-no-files-found: error
