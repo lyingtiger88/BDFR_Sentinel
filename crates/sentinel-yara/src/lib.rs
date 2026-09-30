@@ -1,4 +1,6 @@
-use sentinel_core::{Detection, DetectionKind, ScanEngine, ScanError, ThreatLevel};
+use sentinel_core::{
+    Detection, DetectionCategory, DetectionKind, ScanEngine, ScanError, ThreatLevel,
+};
 
 pub trait YaraBackend: Send + Sync {
     fn scan(&self, data: &[u8]) -> Result<Vec<YaraMatch>, String>;
@@ -9,6 +11,7 @@ pub struct YaraMatch {
     pub rule_id: String,
     pub namespace: Option<String>,
     pub tags: Vec<String>,
+    pub category: DetectionCategory,
     pub level: ThreatLevel,
     pub details: Option<String>,
 }
@@ -46,6 +49,7 @@ where
                 engine: self.name().to_string(),
                 rule_id: Some(m.rule_id.clone()),
                 kind: DetectionKind::Signature,
+                category: m.category,
                 level: m.level,
                 title: format!("YARA rule matched: {}", m.rule_id),
                 details: m.details.or_else(|| {
@@ -88,6 +92,7 @@ mod tests {
                     rule_id: "EICAR_TEST".to_string(),
                     namespace: Some("tests".to_string()),
                     tags: vec!["test".to_string()],
+                    category: DetectionCategory::Test,
                     level: ThreatLevel::Malicious,
                     details: None,
                 }])
@@ -104,6 +109,7 @@ mod tests {
 
         assert_eq!(detections.len(), 1);
         assert_eq!(detections[0].rule_id.as_deref(), Some("EICAR_TEST"));
+        assert_eq!(detections[0].category, DetectionCategory::Test);
         assert_eq!(detections[0].level, ThreatLevel::Malicious);
     }
 }
