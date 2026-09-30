@@ -1,0 +1,14 @@
+/target
+**/target
+.env
+.env.*
+!.env.example
+*.log
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.pdb
+*.ilk
+*.exp
+*.lib
