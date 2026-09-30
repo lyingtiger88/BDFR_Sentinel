@@ -6,8 +6,8 @@ const KEY_FILE: &str = ".sentinel-key.dpapi";
 
 #[cfg(windows)]
 pub fn load_or_create_key(root: &Path) -> Result<[u8; 32], QuarantineError> {
-    use aes_gcm::aead::{AeadCore, OsRng};
-    use aes_gcm::Aes256Gcm;
+    use aes_gcm::aead::OsRng;
+    use aes_gcm::{Aes256Gcm, KeyInit};
     use windows_dpapi::{decrypt_data, encrypt_data, Scope};
 
     let path = root.join(KEY_FILE);
