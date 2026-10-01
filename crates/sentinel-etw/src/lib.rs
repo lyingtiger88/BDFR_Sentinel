@@ -22,7 +22,7 @@ mod windows_impl {
     use super::{EtwError, EtwProcessEvent};
     use ferrisetw::parser::Parser;
     use ferrisetw::provider::Provider;
-    use ferrisetw::trace::{TraceTrait, UserTrace};
+    use ferrisetw::trace::UserTrace;
     use std::sync::Arc;
 
     const KERNEL_PROCESS_PROVIDER: &str = "22fb2cd6-0e7b-422b-a0c7-2fad1fd0e716";
@@ -76,7 +76,7 @@ mod windows_impl {
         }
 
         pub fn stop(&mut self) {
-            if let Some(mut trace) = self.trace.take() {
+            if let Some(trace) = self.trace.take() {
                 let _ = trace.stop();
             }
         }
