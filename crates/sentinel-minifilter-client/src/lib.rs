@@ -108,6 +108,11 @@ mod windows_impl {
     #[link(name = "kernel32")]
     extern "system" {
         fn CloseHandle(handle: *mut c_void) -> i32;
+        fn QueryDosDeviceW(
+            device_name: *const u16,
+            target_path: *mut u16,
+            max_chars: u32,
+        ) -> u32;
     }
 
     pub struct MinifilterBroker {
@@ -265,13 +270,55 @@ mod windows_impl {
             .iter()
             .position(|value| *value == 0)
             .unwrap_or(wire.path.len());
-        let path = String::from_utf16_lossy(&wire.path[..len]);
+        let native_path = String::from_utf16_lossy(&wire.path[..len]);
+        let path = native_to_dos_path(&native_path)
+            .unwrap_or_else(|| PathBuf::from(native_path));
 
         MinifilterRequest {
             process_id: wire.process_id,
             desired_access: wire.desired_access,
-            path: PathBuf::from(path),
+            path,
         }
+    }
+
+    fn native_to_dos_path(native: &str) -> Option<PathBuf> {
+        if !native.starts_with(r"\Device\") {
+            return Some(PathBuf::from(native));
+        }
+
+        for letter in b'A'..=b'Z' {
+            let drive = format!("{}:", letter as char);
+            let drive_wide = wide(&drive);
+            let mut buffer = vec![0u16; 1024];
+
+            let written = unsafe {
+                QueryDosDeviceW(
+                    drive_wide.as_ptr(),
+                    buffer.as_mut_ptr(),
+                    buffer.len() as u32,
+                )
+            };
+
+            if written == 0 {
+                continue;
+            }
+
+            let end = buffer
+                .iter()
+                .position(|value| *value == 0)
+                .unwrap_or(written as usize);
+            let target = String::from_utf16_lossy(&buffer[..end]);
+
+            if native
+                .to_ascii_lowercase()
+                .starts_with(&target.to_ascii_lowercase())
+            {
+                let suffix = &native[target.len()..];
+                return Some(PathBuf::from(format!("{drive}{suffix}")));
+            }
+        }
+
+        None
     }
 
     fn wide(value: &str) -> Vec<u16> {
