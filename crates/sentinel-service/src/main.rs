@@ -8,12 +8,15 @@ use sentinel_behavior::{
 use sentinel_core::{EngineRegistry, FileScanner, ScannerConfig, ThreatLevel};
 use sentinel_definitions::{ClamHashDatabase, HashDefinitionEngine};
 use sentinel_etw::EtwProcessTelemetry;
+use sentinel_memory::executable_writable_regions;
+use sentinel_minifilter_client::{MinifilterBroker, MinifilterDecision};
 use sentinel_pe::PeAnalyzerEngine;
 use sentinel_quarantine::QuarantineStore;
 use sentinel_realtime::{RealtimeConfig, RealtimeMonitor};
 use sentinel_telemetry::{
     ProcessEventKind, ProcessTelemetry, RegistryEventKind, RegistryTelemetry,
 };
+use sentinel_updater::{StagingUpdater, UpdateManifest, UpdateVerifier};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::ffi::OsString;
