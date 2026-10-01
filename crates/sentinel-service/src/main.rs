@@ -6,6 +6,7 @@ use sentinel_definitions::{ClamHashDatabase, HashDefinitionEngine};
 use sentinel_pe::PeAnalyzerEngine;
 use sentinel_quarantine::QuarantineStore;
 use sentinel_realtime::{RealtimeConfig, RealtimeMonitor};
+use sentinel_telemetry::{ProcessEventKind, ProcessTelemetry};
 use serde::{Deserialize, Serialize};
 use std::ffi::OsString;
 use std::fs;
@@ -250,6 +251,54 @@ fn run_service() -> Result<()> {
         }
     })?;
 
+    let process_scanner = Arc::clone(&scanner);
+    let process_quarantine = config.quarantine_dir.clone();
+    let process_auto_quarantine = config.auto_quarantine;
+    let process_telemetry = ProcessTelemetry::start(Duration::from_millis(750), move |event| {
+        if event.kind != ProcessEventKind::Started {
+            return;
+        }
+
+        let Some(executable) = event.process.executable.as_deref() else {
+            return;
+        };
+
+        match process_scanner.scan_file(executable) {
+            Ok(report) if report.verdict.level == ThreatLevel::Malicious => {
+                warn!(
+                    pid = event.process.pid,
+                    path = %executable.display(),
+                    "malicious process image detected"
+                );
+
+                if process_auto_quarantine {
+                    if let Err(err) = QuarantineStore::open(&process_quarantine).and_then(|store| {
+                        store.quarantine_file(
+                            executable,
+                            "malware detected from process telemetry",
+                        )
+                    }) {
+                        error!(
+                            pid = event.process.pid,
+                            path = %executable.display(),
+                            error = %err,
+                            "failed to quarantine malicious process image"
+                        );
+                    }
+                }
+            }
+            Ok(_) => {}
+            Err(err) => {
+                warn!(
+                    pid = event.process.pid,
+                    path = %executable.display(),
+                    error = %err,
+                    "process image scan failed"
+                );
+            }
+        }
+    });
+
     write_status_snapshot(&config, "running");
 
     status_handle.set_service_status(ServiceStatus {
@@ -268,6 +317,7 @@ fn run_service() -> Result<()> {
         thread::sleep(Duration::from_millis(250));
     }
 
+    process_telemetry.stop();
     monitor.stop();
     write_status_snapshot(&config, "stopped");
 
