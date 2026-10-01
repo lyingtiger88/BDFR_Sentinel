@@ -169,6 +169,18 @@ fn install_service() -> Result<()> {
         ServiceManagerAccess::CONNECT | ServiceManagerAccess::CREATE_SERVICE,
     )?;
 
+    if let Ok(service) = manager.open_service(
+        SERVICE_NAME,
+        ServiceAccess::QUERY_STATUS | ServiceAccess::CHANGE_CONFIG,
+    ) {
+        service.set_description(
+            "BDFR Sentinel always-on real-time file protection and quarantine service.",
+        )?;
+        ensure_config_exists()?;
+        println!("{SERVICE_DISPLAY_NAME} is already installed");
+        return Ok(());
+    }
+
     let executable = std::env::current_exe()?;
     let service_info = ServiceInfo {
         name: OsString::from(SERVICE_NAME),
@@ -183,7 +195,10 @@ fn install_service() -> Result<()> {
         account_password: None,
     };
 
-    let service = manager.create_service(&service_info, ServiceAccess::CHANGE_CONFIG)?;
+    let service = manager.create_service(
+        &service_info,
+        ServiceAccess::CHANGE_CONFIG | ServiceAccess::QUERY_STATUS,
+    )?;
     service.set_description(
         "BDFR Sentinel always-on real-time file protection and quarantine service.",
     )?;
