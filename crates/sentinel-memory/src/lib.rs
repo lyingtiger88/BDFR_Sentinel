@@ -44,11 +44,7 @@ mod windows_impl {
 
     #[link(name = "kernel32")]
     extern "system" {
-        fn OpenProcess(
-            desired_access: u32,
-            inherit_handle: i32,
-            process_id: u32,
-        ) -> *mut c_void;
+        fn OpenProcess(desired_access: u32, inherit_handle: i32, process_id: u32) -> *mut c_void;
         fn VirtualQueryEx(
             process: *mut c_void,
             address: *const c_void,
@@ -73,13 +69,7 @@ mod windows_impl {
     pub fn executable_writable_regions(
         pid: u32,
     ) -> Result<Vec<MemoryRegionSignal>, MemoryInspectError> {
-        let raw = unsafe {
-            OpenProcess(
-                PROCESS_QUERY_INFORMATION | PROCESS_VM_READ,
-                0,
-                pid,
-            )
-        };
+        let raw = unsafe { OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, 0, pid) };
 
         if raw.is_null() {
             return Err(MemoryInspectError::OpenProcess { pid });
