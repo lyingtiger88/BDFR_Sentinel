@@ -230,7 +230,7 @@ fn run_service() -> Result<()> {
     let amsi = Arc::new(Mutex::new(AmsiScanner::new().ok()));
     let amsi_for_files = Arc::clone(&amsi);
 
-    let mut monitor = RealtimeMonitor::new(realtime_config, scanner)?;
+    let mut monitor = RealtimeMonitor::new(realtime_config, Arc::clone(&scanner))?;
     monitor.start(move |event| {
         let mut quarantined_by_amsi = false;
 
@@ -317,6 +317,58 @@ fn run_service() -> Result<()> {
             }
         }
     })?;
+
+    let policy_scanner = Arc::clone(&scanner);
+    let policy_quarantine = config.quarantine_dir.clone();
+    let policy_auto_quarantine = config.auto_quarantine;
+
+    let mut minifilter_broker = match MinifilterBroker::start(move |request| {
+        match policy_scanner.scan_file(&request.path) {
+            Ok(report) if report.verdict.level == ThreatLevel::Malicious => {
+                warn!(
+                    pid = request.process_id,
+                    path = %request.path.display(),
+                    "pre-execution policy blocked malicious image"
+                );
+
+                if policy_auto_quarantine {
+                    let path = request.path.clone();
+                    let quarantine_dir = policy_quarantine.clone();
+                    let _ = thread::Builder::new()
+                        .name("bdfr-sentinel-preexec-quarantine".to_string())
+                        .spawn(move || {
+                            let _ = QuarantineStore::open(&quarantine_dir).and_then(|store| {
+                                store.quarantine_file(
+                                    &path,
+                                    "malware blocked by BDFR Sentinel pre-execution policy",
+                                )
+                            });
+                        });
+                }
+
+                MinifilterDecision::Block
+            }
+            Ok(_) => MinifilterDecision::Allow,
+            Err(err) => {
+                warn!(
+                    pid = request.process_id,
+                    path = %request.path.display(),
+                    error = %err,
+                    "pre-execution scan failed; allowing by fail-open policy"
+                );
+                MinifilterDecision::Allow
+            }
+        }
+    }) {
+        Ok(broker) => {
+            info!("connected to BDFR Sentinel minifilter policy port");
+            Some(broker)
+        }
+        Err(err) => {
+            info!(error = %err, "minifilter unavailable; continuing with user-mode protection");
+            None
+        }
+    };
 
     let process_scanner = Arc::clone(&scanner);
     let behavior = Arc::new(Mutex::new(BehaviorEngine::default()));
@@ -455,6 +507,9 @@ fn run_service() -> Result<()> {
         thread::sleep(Duration::from_millis(250));
     }
 
+    if let Some(broker) = minifilter_broker.as_mut() {
+        broker.stop();
+    }
     registry_telemetry.stop();
     process_telemetry.stop();
     monitor.stop();
