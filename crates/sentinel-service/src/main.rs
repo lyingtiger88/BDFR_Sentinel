@@ -46,8 +46,14 @@ struct ServiceConfig {
     hdb_path: Option<PathBuf>,
     hsb_path: Option<PathBuf>,
     quarantine_dir: PathBuf,
+    #[serde(default)]
     definition_update_public_key: Option<PathBuf>,
+    #[serde(default = "default_definition_update_interval_minutes")]
     definition_update_interval_minutes: u64,
+}
+
+fn default_definition_update_interval_minutes() -> u64 {
+    30
 }
 
 impl ServiceConfig {
