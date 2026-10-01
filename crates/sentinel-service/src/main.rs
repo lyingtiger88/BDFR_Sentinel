@@ -576,13 +576,16 @@ fn run_service() -> Result<()> {
                 }
             }
 
+            let mut behavior_actionable = false;
             if let Ok(mut engine) = etw_behavior.lock() {
                 for signal in signals {
                     let assessment = engine.observe(signal);
+                    behavior_actionable |= assessment.is_actionable_malicious();
                     if assessment.level != ThreatLevel::Clean {
                         warn!(
                             pid = assessment.pid,
                             score = assessment.score,
+                            distinct_signals = assessment.distinct_signal_kinds,
                             level = ?assessment.level,
                             "ETW process behavior raised risk"
                         );
@@ -596,35 +599,24 @@ fn run_service() -> Result<()> {
 
             match etw_scanner.scan_file(&executable) {
                 Ok(report) if report.verdict.level == ThreatLevel::Malicious => {
-                    record_threat_event(
+                    remediate_malicious_process(
                         "etw-process",
-                        "detect",
+                        event.process_id,
                         &executable,
-                        format!("pid={}", event.process_id),
+                        &etw_quarantine,
+                        etw_auto_quarantine,
+                        "malware detected from ETW process telemetry",
                     );
-                    warn!(
-                        pid = event.process_id,
-                        path = %executable.display(),
-                        "ETW detected malicious process image"
+                }
+                Ok(_) if behavior_actionable => {
+                    remediate_malicious_process(
+                        "behavior",
+                        event.process_id,
+                        &executable,
+                        &etw_quarantine,
+                        etw_auto_quarantine,
+                        "malicious behavior correlation detected from ETW telemetry",
                     );
-
-                    if terminate_process_for_malware(event.process_id).is_ok() {
-                        record_threat_event(
-                            "etw-process",
-                            "terminate",
-                            &executable,
-                            format!("pid={}", event.process_id),
-                        );
-                    }
-
-                    if etw_auto_quarantine {
-                        let _ = QuarantineStore::open(&etw_quarantine).and_then(|store| {
-                            store.quarantine_file(
-                                &executable,
-                                "malware detected from ETW process telemetry",
-                            )
-                        });
-                    }
                 }
                 Ok(_) => {}
                 Err(err) => {
@@ -686,13 +678,16 @@ fn run_service() -> Result<()> {
                     }
                 }
 
+                let mut behavior_actionable = false;
                 if let Ok(mut engine) = process_behavior.lock() {
                     for signal in signals {
                         let assessment = engine.observe(signal);
+                        behavior_actionable |= assessment.is_actionable_malicious();
                         if assessment.level != ThreatLevel::Clean {
                             warn!(
                                 pid = assessment.pid,
                                 score = assessment.score,
+                                distinct_signals = assessment.distinct_signal_kinds,
                                 level = ?assessment.level,
                                 "behavior correlation raised process risk"
                             );
@@ -706,60 +701,24 @@ fn run_service() -> Result<()> {
 
                 match process_scanner.scan_file(executable) {
                     Ok(report) if report.verdict.level == ThreatLevel::Malicious => {
-                        record_threat_event(
+                        remediate_malicious_process(
                             "process",
-                            "detect",
+                            event.process.pid,
                             executable,
-                            format!("pid={}", event.process.pid),
+                            &process_quarantine,
+                            process_auto_quarantine,
+                            "malware detected from process telemetry",
                         );
-                        warn!(
-                            pid = event.process.pid,
-                            path = %executable.display(),
-                            "malicious process image detected"
+                    }
+                    Ok(_) if behavior_actionable => {
+                        remediate_malicious_process(
+                            "behavior",
+                            event.process.pid,
+                            executable,
+                            &process_quarantine,
+                            process_auto_quarantine,
+                            "malicious behavior correlation detected from process telemetry",
                         );
-
-                        match terminate_process_for_malware(event.process.pid) {
-                            Ok(()) => {
-                                record_threat_event(
-                                    "process",
-                                    "terminate",
-                                    executable,
-                                    format!("pid={}", event.process.pid),
-                                );
-                                warn!(
-                                    pid = event.process.pid,
-                                    path = %executable.display(),
-                                    "terminated confirmed malicious process"
-                                );
-                                thread::sleep(Duration::from_millis(150));
-                            }
-                            Err(err) => {
-                                warn!(
-                                    pid = event.process.pid,
-                                    path = %executable.display(),
-                                    error = %err,
-                                    "could not terminate confirmed malicious process"
-                                );
-                            }
-                        }
-
-                        if process_auto_quarantine {
-                            if let Err(err) =
-                                QuarantineStore::open(&process_quarantine).and_then(|store| {
-                                    store.quarantine_file(
-                                        executable,
-                                        "malware detected from process telemetry",
-                                    )
-                                })
-                            {
-                                error!(
-                                    pid = event.process.pid,
-                                    path = %executable.display(),
-                                    error = %err,
-                                    "failed to quarantine malicious process image"
-                                );
-                            }
-                        }
                     }
                     Ok(_) => {}
                     Err(err) => {
@@ -1086,6 +1045,62 @@ fn process_image_path(pid: u32) -> Option<PathBuf> {
 #[cfg(not(windows))]
 fn process_image_path(_pid: u32) -> Option<PathBuf> {
     None
+}
+
+fn remediate_malicious_process(
+    source: &'static str,
+    pid: u32,
+    executable: &Path,
+    quarantine_dir: &Path,
+    auto_quarantine: bool,
+    reason: &str,
+) {
+    record_threat_event(source, "detect", executable, format!("pid={pid}"));
+    warn!(
+        pid,
+        path = %executable.display(),
+        source,
+        "confirmed malicious process"
+    );
+
+    match terminate_process_for_malware(pid) {
+        Ok(()) => {
+            record_threat_event(source, "terminate", executable, format!("pid={pid}"));
+            warn!(pid, path = %executable.display(), "terminated malicious process");
+            thread::sleep(Duration::from_millis(150));
+        }
+        Err(err) => {
+            warn!(
+                pid,
+                path = %executable.display(),
+                error = %err,
+                "could not terminate malicious process"
+            );
+        }
+    }
+
+    if auto_quarantine {
+        match QuarantineStore::open(quarantine_dir)
+            .and_then(|store| store.quarantine_file(executable, reason))
+        {
+            Ok(entry) => {
+                record_threat_event(
+                    source,
+                    "quarantine",
+                    executable,
+                    format!("pid={pid}; quarantine_id={}", entry.id.0),
+                );
+            }
+            Err(err) => {
+                error!(
+                    pid,
+                    path = %executable.display(),
+                    error = %err,
+                    "failed to quarantine malicious process image"
+                );
+            }
+        }
+    }
 }
 
 #[cfg(windows)]
