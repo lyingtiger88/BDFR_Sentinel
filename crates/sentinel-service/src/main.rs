@@ -21,6 +21,7 @@ use std::collections::HashMap;
 use std::ffi::OsString;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -189,6 +190,7 @@ fn install_service() -> Result<()> {
             "BDFR Sentinel always-on real-time file protection and quarantine service.",
         )?;
         ensure_config_exists()?;
+        configure_service_recovery();
         println!("{SERVICE_DISPLAY_NAME} is already installed");
         return Ok(());
     }
@@ -216,8 +218,40 @@ fn install_service() -> Result<()> {
     )?;
 
     ensure_config_exists()?;
+    configure_service_recovery();
     println!("Installed {SERVICE_DISPLAY_NAME}");
     Ok(())
+}
+
+fn configure_service_recovery() {
+    let failure = Command::new("sc.exe")
+        .args([
+            "failure",
+            SERVICE_NAME,
+            "reset=",
+            "86400",
+            "actions=",
+            "restart/5000/restart/15000/restart/60000",
+        ])
+        .status();
+
+    if let Ok(status) = failure {
+        if !status.success() {
+            warn!("could not configure Windows service restart actions");
+        }
+    } else {
+        warn!("sc.exe was unavailable while configuring service recovery");
+    }
+
+    let failure_flag = Command::new("sc.exe")
+        .args(["failureflag", SERVICE_NAME, "1"])
+        .status();
+
+    if let Ok(status) = failure_flag {
+        if !status.success() {
+            warn!("could not enable service failure actions for non-crash exits");
+        }
+    }
 }
 
 fn uninstall_service() -> Result<()> {
