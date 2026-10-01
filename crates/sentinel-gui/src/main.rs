@@ -8,6 +8,7 @@ use sentinel_pe::PeAnalyzerEngine;
 use sentinel_quarantine::{QuarantineEntry, QuarantineStore};
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{mpsc, Arc};
 use std::thread;
@@ -202,6 +203,8 @@ struct SentinelApp {
     applied_theme: egui::Theme,
     gauge_order: [GaugeKind; 2],
     dragging_gauge: Option<GaugeKind>,
+    service_state: String,
+    last_service_refresh: Instant,
 }
 
 impl SentinelApp {
@@ -246,9 +249,12 @@ impl SentinelApp {
             applied_theme,
             gauge_order: [GaugeKind::Cpu, GaugeKind::Memory],
             dragging_gauge: None,
+            service_state: "Checking…".to_string(),
+            last_service_refresh: Instant::now() - Duration::from_secs(10),
         };
         app.refresh_quarantine();
         app.refresh_metrics();
+        app.refresh_service_state();
         app
     }
 
@@ -257,6 +263,71 @@ impl SentinelApp {
         if resolved != self.applied_theme {
             configure_style(ctx, self.theme_mode);
             self.applied_theme = resolved;
+        }
+    }
+
+    fn refresh_service_state(&mut self) {
+        if self.last_service_refresh.elapsed() < Duration::from_secs(2) {
+            return;
+        }
+
+        let exe = service_executable_path();
+        self.service_state = if !exe.is_file() {
+            "Service binary missing".to_string()
+        } else {
+            match Command::new(&exe).arg("status").output() {
+                Ok(output) if output.status.success() => {
+                    let text = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                    if text.is_empty() {
+                        "Unknown".to_string()
+                    } else {
+                        text
+                    }
+                }
+                Ok(output) => {
+                    let error = String::from_utf8_lossy(&output.stderr);
+                    if error.to_ascii_lowercase().contains("does not exist")
+                        || error.to_ascii_lowercase().contains("not exist")
+                    {
+                        "Not installed".to_string()
+                    } else {
+                        "Not installed".to_string()
+                    }
+                }
+                Err(_) => "Unavailable".to_string(),
+            }
+        };
+        self.last_service_refresh = Instant::now();
+    }
+
+    fn invoke_service_command(&mut self, command: &str) {
+        let exe = service_executable_path();
+        if !exe.is_file() {
+            self.status_text = "Protection service executable was not found.".to_string();
+            return;
+        }
+
+        let escaped = exe.display().to_string().replace(''', "''");
+        let script = format!(
+            "Start-Process -FilePath '{}' -ArgumentList '{}' -Verb RunAs -Wait",
+            escaped, command
+        );
+
+        match Command::new("powershell.exe")
+            .args(["-NoProfile", "-Command", &script])
+            .status()
+        {
+            Ok(status) if status.success() => {
+                self.last_service_refresh = Instant::now() - Duration::from_secs(10);
+                self.refresh_service_state();
+                self.status_text = format!("Protection service command completed: {command}");
+            }
+            Ok(_) => {
+                self.status_text = format!("Protection service command failed: {command}");
+            }
+            Err(err) => {
+                self.status_text = format!("Could not run protection service command: {err}");
+            }
         }
     }
 
@@ -603,21 +674,59 @@ impl SentinelApp {
             "A quick view of protection, scan activity and system load.",
         );
 
+        let realtime_running = self.service_state.contains("Running");
+
         egui::Frame::new()
             .fill(ui.visuals().faint_bg_color)
             .corner_radius(12.0)
             .inner_margin(20.0)
             .show(ui, |ui| {
                 ui.horizontal(|ui| {
-                    ui.label(egui::RichText::new("✓").size(36.0).color(GOOD));
+                    ui.label(
+                        egui::RichText::new(if realtime_running { "✓" } else { "!" })
+                            .size(36.0)
+                            .color(if realtime_running { GOOD } else { WARN }),
+                    );
                     ui.vertical(|ui| {
-                        ui.label(egui::RichText::new("You're protected").size(21.0).strong());
                         ui.label(
-                            egui::RichText::new(
-                                "BDFR Sentinel core protection components are ready.",
-                            )
+                            egui::RichText::new(if realtime_running {
+                                "Real-time protection is on"
+                            } else {
+                                "Real-time protection needs attention"
+                            })
+                            .size(21.0)
+                            .strong(),
+                        );
+                        ui.label(
+                            egui::RichText::new(format!(
+                                "Windows protection service: {}",
+                                self.service_state
+                            ))
                             .color(ui.visuals().weak_text_color()),
                         );
+                    });
+
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if realtime_running {
+                            if fluent_button(ui, "Stop", true).clicked() {
+                                self.invoke_service_command("stop");
+                            }
+                        } else {
+                            if fluent_button(ui, "Start", false).clicked() {
+                                self.invoke_service_command("start");
+                            }
+                            if self.service_state.contains("Not installed") {
+                                if fluent_button(ui, "Install", false).clicked() {
+                                    self.invoke_service_command("install");
+                                    self.invoke_service_command("start");
+                                }
+                            }
+                        }
+
+                        if fluent_button(ui, "Refresh", false).clicked() {
+                            self.last_service_refresh = Instant::now() - Duration::from_secs(10);
+                            self.refresh_service_state();
+                        }
                     });
                 });
             });
@@ -718,7 +827,12 @@ impl SentinelApp {
                 ui.visuals().hyperlink_color,
             );
             status_row(ui, "Encrypted quarantine", "AES-256-GCM + DPAPI", GOOD);
-            status_row(ui, "Real-time monitor", "Core module available", WARN);
+            status_row(
+                ui,
+                "Real-time protection",
+                &self.service_state,
+                if realtime_running { GOOD } else { WARN },
+            );
         });
 
         if let Some(summary) = &self.last_summary {
@@ -1155,6 +1269,7 @@ impl eframe::App for SentinelApp {
         self.poll_scan();
         self.refresh_theme(ctx);
         self.refresh_metrics();
+        self.refresh_service_state();
 
         if self.scanning {
             ctx.request_repaint_after(Duration::from_millis(100));
@@ -1452,6 +1567,14 @@ fn setting_picker(
             }
         });
     });
+}
+
+fn service_executable_path() -> PathBuf {
+    let current = std::env::current_exe().unwrap_or_else(|_| PathBuf::from("."));
+    current
+        .parent()
+        .unwrap_or_else(|| Path::new("."))
+        .join("bdfr-sentinel-service.exe")
 }
 
 fn default_quarantine_dir() -> PathBuf {
