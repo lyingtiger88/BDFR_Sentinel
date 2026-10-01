@@ -396,8 +396,7 @@ fn run_self_test() -> Result<()> {
     .unwrap_or(false);
 
     let amsi_available = AmsiScanner::new().is_ok();
-    let memory_inspection_available =
-        executable_writable_regions(std::process::id()).is_ok();
+    let memory_inspection_available = executable_writable_regions(std::process::id()).is_ok();
 
     let passed = hash_detection
         && realtime_detection
