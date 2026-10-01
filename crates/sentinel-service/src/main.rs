@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use anyhow::{Context, Result};
+use sentinel_behavior::{process_start_signals, BehaviorEngine};
 use sentinel_core::{EngineRegistry, FileScanner, ScannerConfig, ThreatLevel};
 use sentinel_definitions::{ClamHashDatabase, HashDefinitionEngine};
 use sentinel_pe::PeAnalyzerEngine;
@@ -12,7 +13,7 @@ use std::ffi::OsString;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 use tracing::{error, info, warn};
@@ -252,11 +253,34 @@ fn run_service() -> Result<()> {
     })?;
 
     let process_scanner = Arc::clone(&scanner);
+    let behavior = Arc::new(Mutex::new(BehaviorEngine::default()));
     let process_quarantine = config.quarantine_dir.clone();
     let process_auto_quarantine = config.auto_quarantine;
     let process_telemetry = ProcessTelemetry::start(Duration::from_millis(750), move |event| {
         if event.kind != ProcessEventKind::Started {
             return;
+        }
+
+        let signals = process_start_signals(
+            event.process.pid,
+            None,
+            &event.process.name,
+            event.process.executable.as_deref(),
+            &event.process.command_line,
+        );
+
+        if let Ok(mut engine) = behavior.lock() {
+            for signal in signals {
+                let assessment = engine.observe(signal);
+                if assessment.level != ThreatLevel::Clean {
+                    warn!(
+                        pid = assessment.pid,
+                        score = assessment.score,
+                        level = ?assessment.level,
+                        "behavior correlation raised process risk"
+                    );
+                }
+            }
         }
 
         let Some(executable) = event.process.executable.as_deref() else {
