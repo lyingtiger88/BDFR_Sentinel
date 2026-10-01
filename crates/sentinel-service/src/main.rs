@@ -572,6 +572,7 @@ fn run_service() -> Result<()> {
     let process_quarantine = config.quarantine_dir.clone();
     let process_auto_quarantine = config.auto_quarantine;
     let memory_telemetry_enabled = config.enable_memory_telemetry;
+    let process_behavior = Arc::clone(&behavior);
     let process_telemetry = if config.enable_process_telemetry {
         Some(ProcessTelemetry::start(
             Duration::from_millis(750),
@@ -604,7 +605,7 @@ fn run_service() -> Result<()> {
                     }
                 }
 
-                if let Ok(mut engine) = behavior.lock() {
+                if let Ok(mut engine) = process_behavior.lock() {
                     for signal in signals {
                         let assessment = engine.observe(signal);
                         if assessment.level != ThreatLevel::Clean {
