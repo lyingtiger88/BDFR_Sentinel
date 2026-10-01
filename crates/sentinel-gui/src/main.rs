@@ -352,7 +352,7 @@ impl SentinelApp {
                         text
                     }
                 }
-                Ok(_) => "Not installed".to_string()
+                Ok(_) => "Not installed".to_string(),
                 Err(_) => "Unavailable".to_string(),
             }
         };
