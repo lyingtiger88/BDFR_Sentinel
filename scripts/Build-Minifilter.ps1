@@ -8,7 +8,10 @@ param(
 $ErrorActionPreference = "Stop"
 
 $repo = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
-$project = Join-Path $repo "drivers\minifilter\BDFRSentinelFilter.vcxproj"
+$driverDir = Join-Path $repo "drivers\minifilter"
+$project = Join-Path $driverDir "BDFRSentinelFilter.vcxproj"
+$packagesConfig = Join-Path $driverDir "packages.config"
+$packagesDir = Join-Path $driverDir "packages"
 
 if (-not (Test-Path $project)) {
     throw "Minifilter project not found: $project"
@@ -29,7 +32,18 @@ if (-not $msbuild) {
 }
 
 if (-not $msbuild) {
-    throw "MSBuild was not found. Install Visual Studio 2022 with C++ and the Windows Driver Kit (WDK)."
+    throw "MSBuild was not found. Install Visual Studio 2022 with the Desktop C++ workload."
+}
+
+if (Test-Path $packagesConfig) {
+    $nuget = Get-Command nuget.exe -ErrorAction SilentlyContinue
+    if (-not $nuget) {
+        throw "nuget.exe was not found. Install NuGet or restore the WDK packages manually."
+    }
+
+    Write-Host "Restoring pinned WDK/SDK packages..."
+    & $nuget.Source restore $packagesConfig -PackagesDirectory $packagesDir -NonInteractive
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 }
 
 Write-Host "Building BDFR Sentinel minifilter ($Configuration/$Platform)..."
