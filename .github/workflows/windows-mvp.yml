@@ -32,6 +32,36 @@ jobs:
       - name: CLI smoke test
         run: target\release\bdfr-sentinel.exe status
 
+      - name: Protection service lifecycle smoke test
+        shell: pwsh
+        run: |
+          $service = Resolve-Path target\release\bdfr-sentinel-service.exe
+          & $service install
+          if ($LASTEXITCODE -ne 0) { throw "Service install failed" }
+
+          & $service start
+          if ($LASTEXITCODE -ne 0) { throw "Service start request failed" }
+
+          $running = $false
+          for ($i = 0; $i -lt 20; $i++) {
+            Start-Sleep -Milliseconds 500
+            $state = (& $service status 2>&1 | Out-String).Trim()
+            if ($state -match "Running") {
+              $running = $true
+              break
+            }
+          }
+
+          if (-not $running) {
+            & $service stop 2>$null
+            & $service uninstall 2>$null
+            throw "Protection service did not reach Running state"
+          }
+
+          & $service stop
+          Start-Sleep -Seconds 1
+          & $service uninstall
+
       - name: Package
         shell: pwsh
         run: |
