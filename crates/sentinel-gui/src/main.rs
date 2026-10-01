@@ -269,6 +269,8 @@ struct SentinelApp {
     protection_preferences: ProtectionPreferences,
     protection_preferences_loaded: bool,
     last_service_refresh: Instant,
+    show_self_test: bool,
+    self_test_output: String,
 }
 
 impl SentinelApp {
@@ -318,6 +320,8 @@ impl SentinelApp {
             protection_preferences: ProtectionPreferences::default(),
             protection_preferences_loaded: false,
             last_service_refresh: Instant::now() - Duration::from_secs(10),
+            show_self_test: false,
+            self_test_output: String::new(),
         };
         app.refresh_quarantine();
         app.refresh_metrics();
@@ -485,6 +489,44 @@ impl SentinelApp {
             }
             Err(err) => {
                 self.status_text = format!("Could not apply protection settings: {err}");
+            }
+        }
+    }
+
+    fn run_protection_self_test(&mut self) {
+        let exe = service_executable_path();
+        if !exe.is_file() {
+            self.status_text = "Protection service executable was not found.".to_string();
+            return;
+        }
+
+        self.status_text = "Running protection self-test…".to_string();
+
+        match Command::new(&exe).arg("self-test").output() {
+            Ok(output) => {
+                let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+
+                self.self_test_output = if stdout.is_empty() {
+                    stderr
+                } else if stderr.is_empty() {
+                    stdout
+                } else {
+                    format!("{stdout}\n\n{stderr}")
+                };
+
+                if output.status.success() {
+                    self.status_text = "Protection self-test passed.".to_string();
+                } else {
+                    self.status_text = "Protection self-test failed.".to_string();
+                }
+
+                self.show_self_test = true;
+            }
+            Err(err) => {
+                self.self_test_output = format!("Could not run self-test: {err}");
+                self.status_text = "Protection self-test could not start.".to_string();
+                self.show_self_test = true;
             }
         }
     }
@@ -1037,6 +1079,11 @@ impl SentinelApp {
                 },
                 component_color(self.protection_snapshot.minifilter_connected),
             );
+
+            ui.add_space(8.0);
+            if fluent_button(ui, "Run protection self-test", false).clicked() {
+                self.run_protection_self_test();
+            }
         });
 
         if let Some(summary) = &self.last_summary {
@@ -1462,6 +1509,45 @@ impl SentinelApp {
         });
     }
 
+    fn self_test_window(&mut self, ctx: &egui::Context) {
+        if !self.show_self_test {
+            return;
+        }
+
+        let mut open = self.show_self_test;
+        egui::Window::new("Protection self-test")
+            .open(&mut open)
+            .resizable(true)
+            .default_width(560.0)
+            .default_height(420.0)
+            .show(ctx, |ui| {
+                let passed = self.status_text.contains("passed");
+                ui.label(
+                    egui::RichText::new(if passed {
+                        "Protection self-test passed"
+                    } else {
+                        "Protection self-test result"
+                    })
+                    .size(20.0)
+                    .strong()
+                    .color(if passed { GOOD } else { WARN }),
+                );
+                ui.add_space(8.0);
+                ui.label(
+                    egui::RichText::new(
+                        "This validates hash detection, real-time monitoring, encrypted quarantine/restore, AMSI availability and memory inspection.",
+                    )
+                    .color(ui.visuals().weak_text_color()),
+                );
+                ui.separator();
+                egui::ScrollArea::vertical().show(ui, |ui| {
+                    ui.monospace(&self.self_test_output);
+                });
+            });
+
+        self.show_self_test = open;
+    }
+
     fn report_window(&mut self, ctx: &egui::Context) {
         if !self.show_report {
             return;
@@ -1624,6 +1710,7 @@ impl eframe::App for SentinelApp {
             });
 
         self.report_window(ctx);
+        self.self_test_window(ctx);
     }
 }
 
