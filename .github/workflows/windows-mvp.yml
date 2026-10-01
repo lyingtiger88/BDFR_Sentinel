@@ -23,7 +23,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
 
       - name: Build release executables
-        run: cargo build --release -p bdfr-sentinel -p bdfr-sentinel-gui
+        run: cargo build --release -p bdfr-sentinel -p bdfr-sentinel-gui -p bdfr-sentinel-service
 
       - name: CLI smoke test
         run: target\release\bdfr-sentinel.exe status
@@ -57,7 +57,7 @@ jobs:
           Latest Windows x64 test package:
 
           - `BDFR-Sentinel-Windows-x64.zip`
-          - Contains `bdfr-sentinel.exe` and `bdfr-sentinel-gui.exe`
+          - Contains `bdfr-sentinel.exe`, `bdfr-sentinel-gui.exe`, and `bdfr-sentinel-service.exe`
           - Generated automatically after a successful Windows release build and smoke test.
 
           These packages are test builds, not production releases.
