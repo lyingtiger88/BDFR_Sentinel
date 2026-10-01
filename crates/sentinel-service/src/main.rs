@@ -532,6 +532,10 @@ fn run_service() -> Result<()> {
     let etw_behavior = Arc::clone(&behavior);
     let etw_process_names = Arc::new(Mutex::new(HashMap::<u32, String>::new()));
     let etw_names_for_callback = Arc::clone(&etw_process_names);
+    let etw_scanner = Arc::clone(&scanner);
+    let etw_quarantine = config.quarantine_dir.clone();
+    let etw_auto_quarantine = config.auto_quarantine;
+    let etw_memory_enabled = config.enable_memory_telemetry;
 
     let mut etw_process = if config.enable_etw {
         match EtwProcessTelemetry::start(move |event| {
@@ -547,13 +551,30 @@ fn run_service() -> Result<()> {
                 names.insert(event.process_id, event.image_name.clone());
             }
 
-            let signals = process_start_signals(
+            let executable = process_image_path(event.process_id);
+            let mut signals = process_start_signals(
                 event.process_id,
                 parent_name.as_deref(),
                 &event.image_name,
-                None,
+                executable.as_deref(),
                 &[],
             );
+
+            if etw_memory_enabled {
+                if let Ok(regions) = executable_writable_regions(event.process_id) {
+                    for region in regions.into_iter().take(4) {
+                        signals.push(BehaviorSignal {
+                            pid: event.process_id,
+                            kind: BehaviorSignalKind::RwxMemory,
+                            weight: 45,
+                            details: format!(
+                                "executable+writable memory region at 0x{:x}, {} bytes",
+                                region.base_address, region.region_size
+                            ),
+                        });
+                    }
+                }
+            }
 
             if let Ok(mut engine) = etw_behavior.lock() {
                 for signal in signals {
@@ -566,6 +587,53 @@ fn run_service() -> Result<()> {
                             "ETW process behavior raised risk"
                         );
                     }
+                }
+            }
+
+            let Some(executable) = executable else {
+                return;
+            };
+
+            match etw_scanner.scan_file(&executable) {
+                Ok(report) if report.verdict.level == ThreatLevel::Malicious => {
+                    record_threat_event(
+                        "etw-process",
+                        "detect",
+                        &executable,
+                        format!("pid={}", event.process_id),
+                    );
+                    warn!(
+                        pid = event.process_id,
+                        path = %executable.display(),
+                        "ETW detected malicious process image"
+                    );
+
+                    if terminate_process_for_malware(event.process_id).is_ok() {
+                        record_threat_event(
+                            "etw-process",
+                            "terminate",
+                            &executable,
+                            format!("pid={}", event.process_id),
+                        );
+                    }
+
+                    if etw_auto_quarantine {
+                        let _ = QuarantineStore::open(&etw_quarantine).and_then(|store| {
+                            store.quarantine_file(
+                                &executable,
+                                "malware detected from ETW process telemetry",
+                            )
+                        });
+                    }
+                }
+                Ok(_) => {}
+                Err(err) => {
+                    warn!(
+                        pid = event.process_id,
+                        path = %executable.display(),
+                        error = %err,
+                        "ETW process image scan failed"
+                    );
                 }
             }
         }) {
@@ -974,6 +1042,50 @@ fn build_scanner(hdb_path: Option<&Path>, hsb_path: Option<&Path>) -> Result<Fil
     }
 
     Ok(FileScanner::new(ScannerConfig::default(), registry))
+}
+
+#[cfg(windows)]
+fn process_image_path(pid: u32) -> Option<PathBuf> {
+    use std::ffi::c_void;
+
+    const PROCESS_QUERY_LIMITED_INFORMATION: u32 = 0x1000;
+
+    #[link(name = "kernel32")]
+    extern "system" {
+        fn OpenProcess(desired_access: u32, inherit_handle: i32, process_id: u32) -> *mut c_void;
+        fn QueryFullProcessImageNameW(
+            process: *mut c_void,
+            flags: u32,
+            exe_name: *mut u16,
+            size: *mut u32,
+        ) -> i32;
+        fn CloseHandle(handle: *mut c_void) -> i32;
+    }
+
+    let handle = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid) };
+    if handle.is_null() {
+        return None;
+    }
+
+    let mut buffer = vec![0u16; 32768];
+    let mut len = buffer.len() as u32;
+    let ok = unsafe { QueryFullProcessImageNameW(handle, 0, buffer.as_mut_ptr(), &mut len) };
+    unsafe {
+        CloseHandle(handle);
+    }
+
+    if ok == 0 || len == 0 {
+        return None;
+    }
+
+    Some(PathBuf::from(String::from_utf16_lossy(
+        &buffer[..len as usize],
+    )))
+}
+
+#[cfg(not(windows))]
+fn process_image_path(_pid: u32) -> Option<PathBuf> {
+    None
 }
 
 #[cfg(windows)]
