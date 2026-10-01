@@ -148,6 +148,7 @@ fn main() -> Result<()> {
         Some("start") => start_service(),
         Some("stop") => stop_service(),
         Some("status") => print_status(),
+        Some("diagnostics") => print_diagnostics(),
         Some("config") => config_command(args.collect()),
         Some("console") => run_protection_loop(),
         Some(other) => anyhow::bail!("unknown command: {other}"),
@@ -243,6 +244,55 @@ fn print_status() -> Result<()> {
     let service = manager.open_service(SERVICE_NAME, ServiceAccess::QUERY_STATUS)?;
     let status = service.query_status()?;
     println!("{:?}", status.current_state);
+    Ok(())
+}
+
+fn print_diagnostics() -> Result<()> {
+    ensure_config_exists()?;
+    let config = load_config()?;
+
+    #[derive(Serialize)]
+    struct Diagnostics {
+        service_installed: bool,
+        service_state: String,
+        config_path: String,
+        status_path: String,
+        quarantine_dir: String,
+        hdb_exists: bool,
+        hsb_exists: bool,
+        update_public_key_exists: bool,
+        status_snapshot_exists: bool,
+    }
+
+    let (service_installed, service_state) = match ServiceManager::local_computer(
+        None::<&str>,
+        ServiceManagerAccess::CONNECT,
+    )
+    .and_then(|manager| manager.open_service(SERVICE_NAME, ServiceAccess::QUERY_STATUS))
+    {
+        Ok(service) => match service.query_status() {
+            Ok(status) => (true, format!("{:?}", status.current_state)),
+            Err(_) => (true, "Unknown".to_string()),
+        },
+        Err(_) => (false, "NotInstalled".to_string()),
+    };
+
+    let diagnostics = Diagnostics {
+        service_installed,
+        service_state,
+        config_path: config_path().display().to_string(),
+        status_path: status_path().display().to_string(),
+        quarantine_dir: config.quarantine_dir.display().to_string(),
+        hdb_exists: config.hdb_path.as_deref().is_some_and(Path::is_file),
+        hsb_exists: config.hsb_path.as_deref().is_some_and(Path::is_file),
+        update_public_key_exists: config
+            .definition_update_public_key
+            .as_deref()
+            .is_some_and(Path::is_file),
+        status_snapshot_exists: status_path().is_file(),
+    };
+
+    println!("{}", serde_json::to_string_pretty(&diagnostics)?);
     Ok(())
 }
 
