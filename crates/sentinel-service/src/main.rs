@@ -1033,8 +1033,47 @@ fn config_command(args: Vec<String>) -> Result<()> {
             println!("Protection configuration updated. Restart the service to apply.");
             Ok(())
         }
+        [command, settings @ ..] if command == "apply-restart" && !settings.is_empty() => {
+            let mut config = load_config()?;
+
+            for item in settings {
+                let Some((key, value)) = item.split_once('=') else {
+                    anyhow::bail!("invalid setting assignment: {item}");
+                };
+                let enabled = parse_config_bool(value)?;
+                apply_config_setting(&mut config, key, enabled)?;
+            }
+
+            save_config(&config)?;
+
+            let manager =
+                ServiceManager::local_computer(None::<&str>, ServiceManagerAccess::CONNECT)?;
+            let service = manager.open_service(
+                SERVICE_NAME,
+                ServiceAccess::QUERY_STATUS | ServiceAccess::STOP | ServiceAccess::START,
+            );
+
+            if let Ok(service) = service {
+                let was_running = service.query_status()?.current_state != ServiceState::Stopped;
+
+                if was_running {
+                    let _ = service.stop();
+                    for _ in 0..40 {
+                        if service.query_status()?.current_state == ServiceState::Stopped {
+                            break;
+                        }
+                        thread::sleep(Duration::from_millis(250));
+                    }
+
+                    service.start(&[] as &[&str])?;
+                }
+            }
+
+            println!("Protection configuration updated and service restart requested.");
+            Ok(())
+        }
         _ => anyhow::bail!(
-            "usage: bdfr-sentinel-service config show | reset | set <setting> <true|false> | apply <setting=true>..."
+            "usage: bdfr-sentinel-service config show | reset | set <setting> <true|false> | apply <setting=true>... | apply-restart <setting=true>..."
         ),
     }
 }
