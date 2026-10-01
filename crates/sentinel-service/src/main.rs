@@ -327,13 +327,27 @@ fn run_service() -> Result<()> {
             return;
         }
 
-        let signals = process_start_signals(
+        let mut signals = process_start_signals(
             event.process.pid,
             None,
             &event.process.name,
             event.process.executable.as_deref(),
             &event.process.command_line,
         );
+
+        if let Ok(regions) = executable_writable_regions(event.process.pid) {
+            for region in regions.into_iter().take(4) {
+                signals.push(BehaviorSignal {
+                    pid: event.process.pid,
+                    kind: BehaviorSignalKind::RwxMemory,
+                    weight: 45,
+                    details: format!(
+                        "executable+writable memory region at 0x{:x}, {} bytes",
+                        region.base_address, region.region_size
+                    ),
+                });
+            }
+        }
 
         if let Ok(mut engine) = behavior.lock() {
             for signal in signals {
