@@ -13,6 +13,7 @@ members = [
     "crates/sentinel-service",
     "crates/sentinel-telemetry",
     "crates/sentinel-behavior",
+    "crates/sentinel-amsi",
 ]
 
 [workspace.package]
@@ -42,3 +43,4 @@ eframe = "0.31"
 rfd = "0.15"
 sysinfo = "0.37"
 windows-service = "0.8"
+libloading = "0.8"
