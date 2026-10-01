@@ -59,7 +59,7 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force drivers\minifilter\bin\Release | Out-Null
-          & '${{ steps.tools.outputs.cl }}' /nologo /c /TC /kernel /Oi /GS- /Zl /W4 /WX- /D_AMD64_ /DAMD64 /D_WIN64 /DWIN64 /I'${{ steps.tools.outputs.km }}' /I'${{ steps.tools.outputs.shared }}' /I'${{ steps.tools.outputs.msvcinclude }}' /Fo:drivers\minifilter\bin\Release\BDFRSentinelFilter.obj drivers\minifilter\BDFRSentinelFilter.c
+          & '${{ steps.tools.outputs.cl }}' /nologo /c /TC /kernel /Oi /GS- /Zl /W4 /WX- /D_AMD64_ /DAMD64 /D_WIN64 /DWIN64 "/I${{ steps.tools.outputs.km }}" "/I${{ steps.tools.outputs.shared }}" "/I${{ steps.tools.outputs.msvcinclude }}" /Fo:drivers\minifilter\bin\Release\BDFRSentinelFilter.obj drivers\minifilter\BDFRSentinelFilter.c
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Link x64 minifilter
