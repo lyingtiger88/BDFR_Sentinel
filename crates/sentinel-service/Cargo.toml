@@ -17,6 +17,7 @@ tracing-subscriber.workspace = true
 windows-service.workspace = true
 sentinel-core = { path = "../sentinel-core" }
 sentinel-behavior = { path = "../sentinel-behavior" }
+sentinel-amsi = { path = "../sentinel-amsi" }
 sentinel-definitions = { path = "../sentinel-definitions" }
 sentinel-pe = { path = "../sentinel-pe" }
 sentinel-quarantine = { path = "../sentinel-quarantine" }
