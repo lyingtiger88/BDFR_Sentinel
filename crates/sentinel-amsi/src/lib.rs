@@ -89,10 +89,7 @@ impl AmsiScanner {
             return Ok(AmsiVerdict::Clean);
         }
 
-        let len: u32 = data
-            .len()
-            .try_into()
-            .unwrap_or(u32::MAX);
+        let len: u32 = data.len().try_into().unwrap_or(u32::MAX);
         let content_name = wide(content_name);
         let mut result = 0u32;
 
