@@ -1,0 +1,10 @@
+[package]
+name = "sentinel-etw"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+thiserror.workspace = true
+serde.workspace = true
+ferrisetw = "1.2.0"
