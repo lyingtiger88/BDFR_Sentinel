@@ -75,6 +75,13 @@ struct StatusSnapshot {
     protection: &'static str,
     watch_paths: Vec<PathBuf>,
     auto_quarantine: bool,
+    realtime_file_monitor: bool,
+    process_telemetry: bool,
+    registry_telemetry: bool,
+    memory_telemetry: bool,
+    amsi_active: bool,
+    etw_active: bool,
+    minifilter_connected: bool,
 }
 
 fn main() -> Result<()> {
@@ -541,7 +548,21 @@ fn run_service() -> Result<()> {
         }
     });
 
-    write_status_snapshot(&config, "running");
+    let amsi_active = amsi
+        .lock()
+        .map(|scanner| scanner.is_some())
+        .unwrap_or(false);
+    write_status_snapshot(
+        &config,
+        "running",
+        true,
+        true,
+        true,
+        true,
+        amsi_active,
+        etw_process.is_some(),
+        minifilter_broker.is_some(),
+    );
 
     status_handle.set_service_status(ServiceStatus {
         service_type: ServiceType::OWN_PROCESS,
@@ -568,7 +589,17 @@ fn run_service() -> Result<()> {
     registry_telemetry.stop();
     process_telemetry.stop();
     monitor.stop();
-    write_status_snapshot(&config, "stopped");
+    write_status_snapshot(
+        &config,
+        "stopped",
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+    );
 
     status_handle.set_service_status(ServiceStatus {
         service_type: ServiceType::OWN_PROCESS,
@@ -701,12 +732,30 @@ fn load_config() -> Result<ServiceConfig> {
     Ok(serde_json::from_slice(&bytes)?)
 }
 
-fn write_status_snapshot(config: &ServiceConfig, state: &'static str) {
+#[allow(clippy::too_many_arguments)]
+fn write_status_snapshot(
+    config: &ServiceConfig,
+    state: &'static str,
+    realtime_file_monitor: bool,
+    process_telemetry: bool,
+    registry_telemetry: bool,
+    memory_telemetry: bool,
+    amsi_active: bool,
+    etw_active: bool,
+    minifilter_connected: bool,
+) {
     let snapshot = StatusSnapshot {
         service: SERVICE_NAME,
         protection: state,
         watch_paths: config.watch_paths.clone(),
         auto_quarantine: config.auto_quarantine,
+        realtime_file_monitor,
+        process_telemetry,
+        registry_telemetry,
+        memory_telemetry,
+        amsi_active,
+        etw_active,
+        minifilter_connected,
     };
 
     if let Ok(bytes) = serde_json::to_vec_pretty(&snapshot) {
