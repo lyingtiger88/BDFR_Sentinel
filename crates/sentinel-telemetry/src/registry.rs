@@ -125,10 +125,7 @@ fn query_values(key: &str) -> Result<Vec<(String, String)>, std::io::Error> {
 
     for line in text.lines() {
         let trimmed = line.trim();
-        if trimmed.is_empty()
-            || trimmed.starts_with("HKEY_")
-            || trimmed.starts_with("HKLM")
-        {
+        if trimmed.is_empty() || trimmed.starts_with("HKEY_") || trimmed.starts_with("HKLM") {
             continue;
         }
 
