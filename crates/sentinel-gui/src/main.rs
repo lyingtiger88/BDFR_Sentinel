@@ -352,16 +352,7 @@ impl SentinelApp {
                         text
                     }
                 }
-                Ok(output) => {
-                    let error = String::from_utf8_lossy(&output.stderr);
-                    if error.to_ascii_lowercase().contains("does not exist")
-                        || error.to_ascii_lowercase().contains("not exist")
-                    {
-                        "Not installed".to_string()
-                    } else {
-                        "Not installed".to_string()
-                    }
-                }
+                Ok(_) => "Not installed".to_string()
                 Err(_) => "Unavailable".to_string(),
             }
         };
@@ -882,11 +873,11 @@ impl SentinelApp {
                             if fluent_button(ui, "Start", false).clicked() {
                                 self.invoke_service_command("start");
                             }
-                            if self.service_state.contains("Not installed") {
-                                if fluent_button(ui, "Install", false).clicked() {
-                                    self.invoke_service_command("install");
-                                    self.invoke_service_command("start");
-                                }
+                            if self.service_state.contains("Not installed")
+                                && fluent_button(ui, "Install", false).clicked()
+                            {
+                                self.invoke_service_command("install");
+                                self.invoke_service_command("start");
                             }
                         }
 
