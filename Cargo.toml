@@ -12,6 +12,7 @@ members = [
     "crates/sentinel-gui",
     "crates/sentinel-service",
     "crates/sentinel-telemetry",
+    "crates/sentinel-behavior",
 ]
 
 [workspace.package]
