@@ -10,6 +10,10 @@ on:
     paths-ignore:
       - "test-builds/**"
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: write
 
