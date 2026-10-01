@@ -6,6 +6,7 @@ use sentinel_core::{EngineRegistry, FileScanner, ScanReport, ScannerConfig, Thre
 use sentinel_definitions::{ClamHashDatabase, HashDefinitionEngine};
 use sentinel_pe::PeAnalyzerEngine;
 use sentinel_quarantine::{QuarantineEntry, QuarantineStore};
+use serde::Deserialize;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -171,6 +172,24 @@ struct ScanSummary {
     duration: Duration,
 }
 
+#[derive(Debug, Clone, Default, Deserialize)]
+struct ProtectionSnapshot {
+    #[serde(default)]
+    realtime_file_monitor: bool,
+    #[serde(default)]
+    process_telemetry: bool,
+    #[serde(default)]
+    registry_telemetry: bool,
+    #[serde(default)]
+    memory_telemetry: bool,
+    #[serde(default)]
+    amsi_active: bool,
+    #[serde(default)]
+    etw_active: bool,
+    #[serde(default)]
+    minifilter_connected: bool,
+}
+
 struct SentinelApp {
     page: Page,
     target: Option<PathBuf>,
@@ -204,6 +223,7 @@ struct SentinelApp {
     gauge_order: [GaugeKind; 2],
     dragging_gauge: Option<GaugeKind>,
     service_state: String,
+    protection_snapshot: ProtectionSnapshot,
     last_service_refresh: Instant,
 }
 
@@ -250,6 +270,7 @@ impl SentinelApp {
             gauge_order: [GaugeKind::Cpu, GaugeKind::Memory],
             dragging_gauge: None,
             service_state: "Checking…".to_string(),
+            protection_snapshot: ProtectionSnapshot::default(),
             last_service_refresh: Instant::now() - Duration::from_secs(10),
         };
         app.refresh_quarantine();
@@ -297,6 +318,12 @@ impl SentinelApp {
                 Err(_) => "Unavailable".to_string(),
             }
         };
+
+        self.protection_snapshot = fs::read(service_status_path())
+            .ok()
+            .and_then(|bytes| serde_json::from_slice::<ProtectionSnapshot>(&bytes).ok())
+            .unwrap_or_default();
+
         self.last_service_refresh = Instant::now();
     }
 
@@ -832,6 +859,52 @@ impl SentinelApp {
                 "Real-time protection",
                 &self.service_state,
                 if realtime_running { GOOD } else { WARN },
+            );
+            status_row(
+                ui,
+                "File monitor",
+                component_label(self.protection_snapshot.realtime_file_monitor),
+                component_color(self.protection_snapshot.realtime_file_monitor),
+            );
+            status_row(
+                ui,
+                "Process telemetry",
+                component_label(self.protection_snapshot.process_telemetry),
+                component_color(self.protection_snapshot.process_telemetry),
+            );
+            status_row(
+                ui,
+                "Registry persistence",
+                component_label(self.protection_snapshot.registry_telemetry),
+                component_color(self.protection_snapshot.registry_telemetry),
+            );
+            status_row(
+                ui,
+                "Memory telemetry",
+                component_label(self.protection_snapshot.memory_telemetry),
+                component_color(self.protection_snapshot.memory_telemetry),
+            );
+            status_row(
+                ui,
+                "Windows AMSI",
+                component_label(self.protection_snapshot.amsi_active),
+                component_color(self.protection_snapshot.amsi_active),
+            );
+            status_row(
+                ui,
+                "ETW process trace",
+                component_label(self.protection_snapshot.etw_active),
+                component_color(self.protection_snapshot.etw_active),
+            );
+            status_row(
+                ui,
+                "Pre-execution Minifilter",
+                if self.protection_snapshot.minifilter_connected {
+                    "Connected"
+                } else {
+                    "Not connected"
+                },
+                component_color(self.protection_snapshot.minifilter_connected),
             );
         });
 
@@ -1567,6 +1640,31 @@ fn setting_picker(
             }
         });
     });
+}
+
+fn component_label(active: bool) -> &'static str {
+    if active {
+        "Active"
+    } else {
+        "Inactive"
+    }
+}
+
+fn component_color(active: bool) -> egui::Color32 {
+    if active {
+        GOOD
+    } else {
+        WARN
+    }
+}
+
+fn service_status_path() -> PathBuf {
+    std::env::var_os("ProgramData")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from(r"C:\ProgramData"))
+        .join("BDFR")
+        .join("Sentinel")
+        .join("status.json")
 }
 
 fn service_executable_path() -> PathBuf {
