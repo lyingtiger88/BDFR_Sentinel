@@ -7,6 +7,7 @@ use sentinel_behavior::{
 };
 use sentinel_core::{EngineRegistry, FileScanner, ScannerConfig, ThreatLevel};
 use sentinel_definitions::{ClamHashDatabase, HashDefinitionEngine};
+use sentinel_etw::EtwProcessTelemetry;
 use sentinel_pe::PeAnalyzerEngine;
 use sentinel_quarantine::QuarantineStore;
 use sentinel_realtime::{RealtimeConfig, RealtimeMonitor};
@@ -14,6 +15,7 @@ use sentinel_telemetry::{
     ProcessEventKind, ProcessTelemetry, RegistryEventKind, RegistryTelemetry,
 };
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::ffi::OsString;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -372,6 +374,56 @@ fn run_service() -> Result<()> {
 
     let process_scanner = Arc::clone(&scanner);
     let behavior = Arc::new(Mutex::new(BehaviorEngine::default()));
+
+    let etw_behavior = Arc::clone(&behavior);
+    let etw_process_names = Arc::new(Mutex::new(HashMap::<u32, String>::new()));
+    let etw_names_for_callback = Arc::clone(&etw_process_names);
+
+    let mut etw_process = match EtwProcessTelemetry::start(move |event| {
+        let parent_name = etw_names_for_callback
+            .lock()
+            .ok()
+            .and_then(|names| names.get(&event.parent_process_id).cloned());
+
+        if let Ok(mut names) = etw_names_for_callback.lock() {
+            names.insert(event.process_id, event.image_name.clone());
+            if names.len() > 8192 {
+                names.retain(|_, _| true);
+            }
+        }
+
+        let signals = process_start_signals(
+            event.process_id,
+            parent_name.as_deref(),
+            &event.image_name,
+            None,
+            &[],
+        );
+
+        if let Ok(mut engine) = etw_behavior.lock() {
+            for signal in signals {
+                let assessment = engine.observe(signal);
+                if assessment.level != ThreatLevel::Clean {
+                    warn!(
+                        pid = assessment.pid,
+                        score = assessment.score,
+                        level = ?assessment.level,
+                        "ETW process behavior raised risk"
+                    );
+                }
+            }
+        }
+    }) {
+        Ok(trace) => {
+            info!("ETW process telemetry active");
+            Some(trace)
+        }
+        Err(err) => {
+            warn!(error = %err, "ETW unavailable; polling process telemetry remains active");
+            None
+        }
+    };
+
     let process_quarantine = config.quarantine_dir.clone();
     let process_auto_quarantine = config.auto_quarantine;
     let process_telemetry = ProcessTelemetry::start(Duration::from_millis(750), move |event| {
@@ -509,6 +561,9 @@ fn run_service() -> Result<()> {
 
     if let Some(broker) = minifilter_broker.as_mut() {
         broker.stop();
+    }
+    if let Some(etw) = etw_process.as_mut() {
+        etw.stop();
     }
     registry_telemetry.stop();
     process_telemetry.stop();
