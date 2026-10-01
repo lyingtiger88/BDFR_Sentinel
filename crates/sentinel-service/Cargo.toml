@@ -20,3 +20,4 @@ sentinel-definitions = { path = "../sentinel-definitions" }
 sentinel-pe = { path = "../sentinel-pe" }
 sentinel-quarantine = { path = "../sentinel-quarantine" }
 sentinel-realtime = { path = "../sentinel-realtime" }
+sentinel-telemetry = { path = "../sentinel-telemetry" }
