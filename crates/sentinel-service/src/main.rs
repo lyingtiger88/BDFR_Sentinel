@@ -53,10 +53,30 @@ struct ServiceConfig {
     definition_update_public_key: Option<PathBuf>,
     #[serde(default = "default_definition_update_interval_minutes")]
     definition_update_interval_minutes: u64,
+    #[serde(default = "default_true")]
+    enable_realtime_file_monitor: bool,
+    #[serde(default = "default_true")]
+    enable_process_telemetry: bool,
+    #[serde(default = "default_true")]
+    enable_registry_telemetry: bool,
+    #[serde(default = "default_true")]
+    enable_memory_telemetry: bool,
+    #[serde(default = "default_true")]
+    enable_amsi: bool,
+    #[serde(default = "default_true")]
+    enable_etw: bool,
+    #[serde(default = "default_true")]
+    enable_minifilter: bool,
+    #[serde(default = "default_true")]
+    enable_definition_updates: bool,
 }
 
 fn default_definition_update_interval_minutes() -> u64 {
     30
+}
+
+fn default_true() -> bool {
+    true
 }
 
 impl ServiceConfig {
@@ -82,6 +102,14 @@ impl ServiceConfig {
                     .join("update-public-key.bin"),
             ),
             definition_update_interval_minutes: 30,
+            enable_realtime_file_monitor: true,
+            enable_process_telemetry: true,
+            enable_registry_telemetry: true,
+            enable_memory_telemetry: true,
+            enable_amsi: true,
+            enable_etw: true,
+            enable_minifilter: true,
+            enable_definition_updates: true,
         }
     }
 }
