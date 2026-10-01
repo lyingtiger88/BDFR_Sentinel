@@ -148,6 +148,7 @@ fn main() -> Result<()> {
         Some("start") => start_service(),
         Some("stop") => stop_service(),
         Some("status") => print_status(),
+        Some("config") => config_command(args.collect()),
         Some("console") => run_protection_loop(),
         Some(other) => anyhow::bail!("unknown command: {other}"),
         None => service_dispatcher::start(SERVICE_NAME, ffi_service_main)
@@ -958,6 +959,66 @@ fn load_config() -> Result<ServiceConfig> {
     let path = config_path();
     let bytes = fs::read(&path).with_context(|| format!("failed to read {}", path.display()))?;
     Ok(serde_json::from_slice(&bytes)?)
+}
+
+
+fn save_config(config: &ServiceConfig) -> Result<()> {
+    let path = config_path();
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    fs::write(&path, serde_json::to_vec_pretty(config)?)?;
+    Ok(())
+}
+
+fn parse_config_bool(value: &str) -> Result<bool> {
+    match value.to_ascii_lowercase().as_str() {
+        "1" | "true" | "on" | "yes" | "enable" | "enabled" => Ok(true),
+        "0" | "false" | "off" | "no" | "disable" | "disabled" => Ok(false),
+        _ => anyhow::bail!("invalid boolean value: {value}"),
+    }
+}
+
+fn config_command(args: Vec<String>) -> Result<()> {
+    ensure_config_exists()?;
+
+    match args.as_slice() {
+        [command] if command == "show" => {
+            let config = load_config()?;
+            println!("{}", serde_json::to_string_pretty(&config)?);
+            Ok(())
+        }
+        [command] if command == "reset" => {
+            let config = ServiceConfig::defaults();
+            save_config(&config)?;
+            println!("Protection configuration reset to defaults");
+            Ok(())
+        }
+        [command, key, value] if command == "set" => {
+            let enabled = parse_config_bool(value)?;
+            let mut config = load_config()?;
+
+            match key.as_str() {
+                "realtime_file_monitor" => config.enable_realtime_file_monitor = enabled,
+                "process_telemetry" => config.enable_process_telemetry = enabled,
+                "registry_telemetry" => config.enable_registry_telemetry = enabled,
+                "memory_telemetry" => config.enable_memory_telemetry = enabled,
+                "amsi" => config.enable_amsi = enabled,
+                "etw" => config.enable_etw = enabled,
+                "minifilter" => config.enable_minifilter = enabled,
+                "definition_updates" => config.enable_definition_updates = enabled,
+                "auto_quarantine" => config.auto_quarantine = enabled,
+                _ => anyhow::bail!("unknown protection setting: {key}"),
+            }
+
+            save_config(&config)?;
+            println!("Updated {key}={enabled}. Restart the protection service to apply.");
+            Ok(())
+        }
+        _ => anyhow::bail!(
+            "usage: bdfr-sentinel-service config show | reset | set <setting> <true|false>"
+        ),
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
