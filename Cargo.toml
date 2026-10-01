@@ -10,6 +10,7 @@ members = [
     "crates/sentinel-definitions",
     "crates/sentinel-cli",
     "crates/sentinel-gui",
+    "crates/sentinel-service",
 ]
 
 [workspace.package]
@@ -38,3 +39,4 @@ walkdir = "2.5"
 eframe = "0.31"
 rfd = "0.15"
 sysinfo = "0.37"
+windows-service = "0.8"
