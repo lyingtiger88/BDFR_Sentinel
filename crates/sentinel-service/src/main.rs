@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use anyhow::{Context, Result};
+use sentinel_amsi::{AmsiScanner, AmsiVerdict};
 use sentinel_behavior::{
     process_start_signals, BehaviorEngine, BehaviorSignal, BehaviorSignalKind,
 };
@@ -226,11 +227,72 @@ fn run_service() -> Result<()> {
 
     let quarantine_dir = config.quarantine_dir.clone();
     let auto_quarantine = config.auto_quarantine;
+    let amsi = Arc::new(Mutex::new(AmsiScanner::new().ok()));
+    let amsi_for_files = Arc::clone(&amsi);
 
     let mut monitor = RealtimeMonitor::new(realtime_config, scanner)?;
     monitor.start(move |event| {
+        let mut quarantined_by_amsi = false;
+
+        if is_script_path(&event.path) {
+            if let Ok(guard) = amsi_for_files.lock() {
+                if let Some(scanner) = guard.as_ref() {
+                    match scanner.scan_file(&event.path) {
+                        Ok(AmsiVerdict::Malicious) => {
+                            warn!(
+                                path = %event.path.display(),
+                                "AMSI reported malicious script content"
+                            );
+
+                            if auto_quarantine {
+                                match QuarantineStore::open(&quarantine_dir).and_then(|store| {
+                                    store.quarantine_file(
+                                        &event.path,
+                                        "malicious script detected by Windows AMSI",
+                                    )
+                                }) {
+                                    Ok(entry) => {
+                                        quarantined_by_amsi = true;
+                                        warn!(
+                                            path = %event.path.display(),
+                                            quarantine_id = %entry.id.0,
+                                            "AMSI detection quarantined"
+                                        );
+                                    }
+                                    Err(err) => {
+                                        error!(
+                                            path = %event.path.display(),
+                                            error = %err,
+                                            "failed to quarantine AMSI detection"
+                                        );
+                                    }
+                                }
+                            }
+                        }
+                        Ok(AmsiVerdict::Suspicious) => {
+                            warn!(
+                                path = %event.path.display(),
+                                "AMSI returned a suspicious or policy-blocked result"
+                            );
+                        }
+                        Ok(AmsiVerdict::Clean) => {}
+                        Err(err) => {
+                            warn!(
+                                path = %event.path.display(),
+                                error = %err,
+                                "AMSI scan failed; continuing with Sentinel engines"
+                            );
+                        }
+                    }
+                }
+            }
+        }
+
         if let Some(report) = event.report {
-            if report.verdict.level == ThreatLevel::Malicious && auto_quarantine {
+            if report.verdict.level == ThreatLevel::Malicious
+                && auto_quarantine
+                && !quarantined_by_amsi
+            {
                 match QuarantineStore::open(&quarantine_dir).and_then(|store| {
                     store.quarantine_file(
                         &event.path,
@@ -433,6 +495,18 @@ fn run_protection_loop() -> Result<()> {
     loop {
         thread::sleep(Duration::from_secs(1));
     }
+}
+
+fn is_script_path(path: &Path) -> bool {
+    path.extension()
+        .and_then(|ext| ext.to_str())
+        .map(|ext| {
+            matches!(
+                ext.to_ascii_lowercase().as_str(),
+                "ps1" | "psm1" | "psd1" | "js" | "jse" | "vbs" | "vbe" | "bat" | "cmd" | "hta"
+            )
+        })
+        .unwrap_or(false)
 }
 
 fn build_scanner(hdb_path: Option<&Path>, hsb_path: Option<&Path>) -> Result<FileScanner> {
