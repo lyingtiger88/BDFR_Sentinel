@@ -44,10 +44,14 @@ jobs:
             Sort-Object FullName -Descending | Select-Object -First 1
           if (-not $cl) { throw "x64 cl.exe not found" }
           $link = Join-Path $cl.Directory.FullName "link.exe"
+          $msvcRoot = $cl.Directory.Parent.Parent.Parent.FullName
+          $msvcInclude = Join-Path $msvcRoot "include"
+          if (-not (Test-Path (Join-Path $msvcInclude "excpt.h"))) { throw "MSVC include directory not found" }
 
           "km=$($inc.FullName)\km" >> $env:GITHUB_OUTPUT
           "shared=$($inc.FullName)\shared" >> $env:GITHUB_OUTPUT
           "lib=$lib" >> $env:GITHUB_OUTPUT
+          "msvcinclude=$msvcInclude" >> $env:GITHUB_OUTPUT
           "cl=$($cl.FullName)" >> $env:GITHUB_OUTPUT
           "link=$link" >> $env:GITHUB_OUTPUT
 
@@ -55,7 +59,7 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force drivers\minifilter\bin\Release | Out-Null
-          & '${{ steps.tools.outputs.cl }}' /nologo /c /TC /kernel /Oi /GS- /Zl /W4 /WX- /D_AMD64_ /DAMD64 /D_WIN64 /DWIN64 /I'${{ steps.tools.outputs.km }}' /I'${{ steps.tools.outputs.shared }}' /Fo:drivers\minifilter\bin\Release\BDFRSentinelFilter.obj drivers\minifilter\BDFRSentinelFilter.c
+          & '${{ steps.tools.outputs.cl }}' /nologo /c /TC /kernel /Oi /GS- /Zl /W4 /WX- /D_AMD64_ /DAMD64 /D_WIN64 /DWIN64 /I'${{ steps.tools.outputs.km }}' /I'${{ steps.tools.outputs.shared }}' /I'${{ steps.tools.outputs.msvcinclude }}' /Fo:drivers\minifilter\bin\Release\BDFRSentinelFilter.obj drivers\minifilter\BDFRSentinelFilter.c
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Link x64 minifilter
