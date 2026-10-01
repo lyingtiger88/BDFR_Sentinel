@@ -290,166 +290,181 @@ fn run_service() -> Result<()> {
 
     let quarantine_dir = config.quarantine_dir.clone();
     let auto_quarantine = config.auto_quarantine;
-    let amsi = Arc::new(Mutex::new(AmsiScanner::new().ok()));
+    let amsi = Arc::new(Mutex::new(if config.enable_amsi {
+        AmsiScanner::new().ok()
+    } else {
+        None
+    }));
     let amsi_for_files = Arc::clone(&amsi);
 
-    let mut monitor = RealtimeMonitor::new(realtime_config, Arc::clone(&scanner))?;
-    monitor.start(move |event| {
-        let mut quarantined_by_amsi = false;
+    let mut monitor = if config.enable_realtime_file_monitor {
+            let mut monitor = RealtimeMonitor::new(realtime_config, Arc::clone(&scanner))?;
+            monitor.start(move |event| {
+            let mut quarantined_by_amsi = false;
 
-        if is_script_path(&event.path) {
-            if let Ok(guard) = amsi_for_files.lock() {
-                if let Some(scanner) = guard.as_ref() {
-                    match scanner.scan_file(&event.path) {
-                        Ok(AmsiVerdict::Malicious) => {
-                            warn!(
-                                path = %event.path.display(),
-                                "AMSI reported malicious script content"
-                            );
+            if is_script_path(&event.path) {
+                if let Ok(guard) = amsi_for_files.lock() {
+                    if let Some(scanner) = guard.as_ref() {
+                        match scanner.scan_file(&event.path) {
+                            Ok(AmsiVerdict::Malicious) => {
+                                warn!(
+                                    path = %event.path.display(),
+                                    "AMSI reported malicious script content"
+                                );
 
-                            if auto_quarantine {
-                                match QuarantineStore::open(&quarantine_dir).and_then(|store| {
-                                    store.quarantine_file(
-                                        &event.path,
-                                        "malicious script detected by Windows AMSI",
-                                    )
-                                }) {
-                                    Ok(entry) => {
-                                        quarantined_by_amsi = true;
-                                        record_threat_event(
-                                            "amsi",
-                                            "quarantine",
+                                if auto_quarantine {
+                                    match QuarantineStore::open(&quarantine_dir).and_then(|store| {
+                                        store.quarantine_file(
                                             &event.path,
-                                            format!("quarantine_id={}", entry.id.0),
-                                        );
-                                        warn!(
-                                            path = %event.path.display(),
-                                            quarantine_id = %entry.id.0,
-                                            "AMSI detection quarantined"
-                                        );
-                                    }
-                                    Err(err) => {
-                                        error!(
-                                            path = %event.path.display(),
-                                            error = %err,
-                                            "failed to quarantine AMSI detection"
-                                        );
+                                            "malicious script detected by Windows AMSI",
+                                        )
+                                    }) {
+                                        Ok(entry) => {
+                                            quarantined_by_amsi = true;
+                                            record_threat_event(
+                                                "amsi",
+                                                "quarantine",
+                                                &event.path,
+                                                format!("quarantine_id={}", entry.id.0),
+                                            );
+                                            warn!(
+                                                path = %event.path.display(),
+                                                quarantine_id = %entry.id.0,
+                                                "AMSI detection quarantined"
+                                            );
+                                        }
+                                        Err(err) => {
+                                            error!(
+                                                path = %event.path.display(),
+                                                error = %err,
+                                                "failed to quarantine AMSI detection"
+                                            );
+                                        }
                                     }
                                 }
                             }
+                            Ok(AmsiVerdict::Suspicious) => {
+                                warn!(
+                                    path = %event.path.display(),
+                                    "AMSI returned a suspicious or policy-blocked result"
+                                );
+                            }
+                            Ok(AmsiVerdict::Clean) => {}
+                            Err(err) => {
+                                warn!(
+                                    path = %event.path.display(),
+                                    error = %err,
+                                    "AMSI scan failed; continuing with Sentinel engines"
+                                );
+                            }
                         }
-                        Ok(AmsiVerdict::Suspicious) => {
+                    }
+                }
+            }
+
+            if let Some(report) = event.report {
+                if report.verdict.level == ThreatLevel::Malicious
+                    && auto_quarantine
+                    && !quarantined_by_amsi
+                {
+                    match QuarantineStore::open(&quarantine_dir).and_then(|store| {
+                        store.quarantine_file(
+                            &event.path,
+                            "malware detected by BDFR Sentinel real-time protection",
+                        )
+                    }) {
+                        Ok(entry) => {
+                            record_threat_event(
+                                "realtime-file",
+                                "quarantine",
+                                &event.path,
+                                format!("quarantine_id={}", entry.id.0),
+                            );
                             warn!(
                                 path = %event.path.display(),
-                                "AMSI returned a suspicious or policy-blocked result"
+                                quarantine_id = %entry.id.0,
+                                "malware quarantined by real-time protection"
                             );
                         }
-                        Ok(AmsiVerdict::Clean) => {}
                         Err(err) => {
-                            warn!(
+                            error!(
                                 path = %event.path.display(),
                                 error = %err,
-                                "AMSI scan failed; continuing with Sentinel engines"
+                                "failed to quarantine real-time detection"
                             );
                         }
                     }
                 }
             }
-        }
+            })?;
+            Some(monitor)
+        } else {
+            None
+        };
 
-        if let Some(report) = event.report {
-            if report.verdict.level == ThreatLevel::Malicious
-                && auto_quarantine
-                && !quarantined_by_amsi
-            {
-                match QuarantineStore::open(&quarantine_dir).and_then(|store| {
-                    store.quarantine_file(
-                        &event.path,
-                        "malware detected by BDFR Sentinel real-time protection",
-                    )
-                }) {
-                    Ok(entry) => {
-                        record_threat_event(
-                            "realtime-file",
-                            "quarantine",
-                            &event.path,
-                            format!("quarantine_id={}", entry.id.0),
-                        );
-                        warn!(
-                            path = %event.path.display(),
-                            quarantine_id = %entry.id.0,
-                            "malware quarantined by real-time protection"
-                        );
-                    }
-                    Err(err) => {
-                        error!(
-                            path = %event.path.display(),
-                            error = %err,
-                            "failed to quarantine real-time detection"
-                        );
-                    }
-                }
-            }
-        }
-    })?;
 
     let policy_scanner = Arc::clone(&scanner);
     let policy_quarantine = config.quarantine_dir.clone();
     let policy_auto_quarantine = config.auto_quarantine;
 
-    let mut minifilter_broker = match MinifilterBroker::start(move |request| {
-        match policy_scanner.scan_file(&request.path) {
-            Ok(report) if report.verdict.level == ThreatLevel::Malicious => {
-                record_threat_event(
-                    "minifilter",
-                    "block",
-                    &request.path,
-                    format!("pid={}", request.process_id),
-                );
-                warn!(
-                    pid = request.process_id,
-                    path = %request.path.display(),
-                    "pre-execution policy blocked malicious image"
-                );
+    let mut minifilter_broker = if config.enable_minifilter {
+            match MinifilterBroker::start(move |request| {
+            match policy_scanner.scan_file(&request.path) {
+                Ok(report) if report.verdict.level == ThreatLevel::Malicious => {
+                    record_threat_event(
+                        "minifilter",
+                        "block",
+                        &request.path,
+                        format!("pid={}", request.process_id),
+                    );
+                    warn!(
+                        pid = request.process_id,
+                        path = %request.path.display(),
+                        "pre-execution policy blocked malicious image"
+                    );
 
-                if policy_auto_quarantine {
-                    let path = request.path.clone();
-                    let quarantine_dir = policy_quarantine.clone();
-                    let _ = thread::Builder::new()
-                        .name("bdfr-sentinel-preexec-quarantine".to_string())
-                        .spawn(move || {
-                            let _ = QuarantineStore::open(&quarantine_dir).and_then(|store| {
-                                store.quarantine_file(
-                                    &path,
-                                    "malware blocked by BDFR Sentinel pre-execution policy",
-                                )
+                    if policy_auto_quarantine {
+                        let path = request.path.clone();
+                        let quarantine_dir = policy_quarantine.clone();
+                        let _ = thread::Builder::new()
+                            .name("bdfr-sentinel-preexec-quarantine".to_string())
+                            .spawn(move || {
+                                let _ = QuarantineStore::open(&quarantine_dir).and_then(|store| {
+                                    store.quarantine_file(
+                                        &path,
+                                        "malware blocked by BDFR Sentinel pre-execution policy",
+                                    )
+                                });
                             });
-                        });
-                }
+                    }
 
-                MinifilterDecision::Block
+                    MinifilterDecision::Block
+                }
+                Ok(_) => MinifilterDecision::Allow,
+                Err(err) => {
+                    warn!(
+                        pid = request.process_id,
+                        path = %request.path.display(),
+                        error = %err,
+                        "pre-execution scan failed; allowing by fail-open policy"
+                    );
+                    MinifilterDecision::Allow
+                }
             }
-            Ok(_) => MinifilterDecision::Allow,
+        }) {
+            Ok(broker) => {
+                info!("connected to BDFR Sentinel minifilter policy port");
+                Some(broker)
+            }
             Err(err) => {
-                warn!(
-                    pid = request.process_id,
-                    path = %request.path.display(),
-                    error = %err,
-                    "pre-execution scan failed; allowing by fail-open policy"
-                );
-                MinifilterDecision::Allow
+                info!(error = %err, "minifilter unavailable; continuing with user-mode protection");
+                None
             }
-        }
-    }) {
-        Ok(broker) => {
-            info!("connected to BDFR Sentinel minifilter policy port");
-            Some(broker)
-        }
-        Err(err) => {
-            info!(error = %err, "minifilter unavailable; continuing with user-mode protection");
+            }
+        } else {
             None
-        }
-    };
+        };
+
 
     let process_scanner = Arc::clone(&scanner);
     let behavior = Arc::new(Mutex::new(BehaviorEngine::default()));
@@ -458,54 +473,61 @@ fn run_service() -> Result<()> {
     let etw_process_names = Arc::new(Mutex::new(HashMap::<u32, String>::new()));
     let etw_names_for_callback = Arc::clone(&etw_process_names);
 
-    let mut etw_process = match EtwProcessTelemetry::start(move |event| {
-        let parent_name = etw_names_for_callback
-            .lock()
-            .ok()
-            .and_then(|names| names.get(&event.parent_process_id).cloned());
+    let mut etw_process = if config.enable_etw {
+            match EtwProcessTelemetry::start(move |event| {
+            let parent_name = etw_names_for_callback
+                .lock()
+                .ok()
+                .and_then(|names| names.get(&event.parent_process_id).cloned());
 
-        if let Ok(mut names) = etw_names_for_callback.lock() {
-            if names.len() >= 8192 {
-                names.clear();
+            if let Ok(mut names) = etw_names_for_callback.lock() {
+                if names.len() >= 8192 {
+                    names.clear();
+                }
+                names.insert(event.process_id, event.image_name.clone());
             }
-            names.insert(event.process_id, event.image_name.clone());
-        }
 
-        let signals = process_start_signals(
-            event.process_id,
-            parent_name.as_deref(),
-            &event.image_name,
-            None,
-            &[],
-        );
+            let signals = process_start_signals(
+                event.process_id,
+                parent_name.as_deref(),
+                &event.image_name,
+                None,
+                &[],
+            );
 
-        if let Ok(mut engine) = etw_behavior.lock() {
-            for signal in signals {
-                let assessment = engine.observe(signal);
-                if assessment.level != ThreatLevel::Clean {
-                    warn!(
-                        pid = assessment.pid,
-                        score = assessment.score,
-                        level = ?assessment.level,
-                        "ETW process behavior raised risk"
-                    );
+            if let Ok(mut engine) = etw_behavior.lock() {
+                for signal in signals {
+                    let assessment = engine.observe(signal);
+                    if assessment.level != ThreatLevel::Clean {
+                        warn!(
+                            pid = assessment.pid,
+                            score = assessment.score,
+                            level = ?assessment.level,
+                            "ETW process behavior raised risk"
+                        );
+                    }
                 }
             }
-        }
-    }) {
-        Ok(trace) => {
-            info!("ETW process telemetry active");
-            Some(trace)
-        }
-        Err(err) => {
-            warn!(error = %err, "ETW unavailable; polling process telemetry remains active");
+        }) {
+            Ok(trace) => {
+                info!("ETW process telemetry active");
+                Some(trace)
+            }
+            Err(err) => {
+                warn!(error = %err, "ETW unavailable; polling process telemetry remains active");
+                None
+            }
+            }
+        } else {
             None
-        }
-    };
+        };
+
 
     let process_quarantine = config.quarantine_dir.clone();
     let process_auto_quarantine = config.auto_quarantine;
-    let process_telemetry = ProcessTelemetry::start(Duration::from_millis(750), move |event| {
+    let memory_telemetry_enabled = config.enable_memory_telemetry;
+    let process_telemetry = if config.enable_process_telemetry {
+        Some(ProcessTelemetry::start(Duration::from_millis(750), move |event| {
         if event.kind != ProcessEventKind::Started {
             return;
         }
@@ -518,17 +540,19 @@ fn run_service() -> Result<()> {
             &event.process.command_line,
         );
 
-        if let Ok(regions) = executable_writable_regions(event.process.pid) {
-            for region in regions.into_iter().take(4) {
-                signals.push(BehaviorSignal {
-                    pid: event.process.pid,
-                    kind: BehaviorSignalKind::RwxMemory,
-                    weight: 45,
-                    details: format!(
-                        "executable+writable memory region at 0x{:x}, {} bytes",
-                        region.base_address, region.region_size
-                    ),
-                });
+        if memory_telemetry_enabled {
+            if let Ok(regions) = executable_writable_regions(event.process.pid) {
+                for region in regions.into_iter().take(4) {
+                    signals.push(BehaviorSignal {
+                        pid: event.process.pid,
+                        kind: BehaviorSignalKind::RwxMemory,
+                        weight: 45,
+                        details: format!(
+                            "executable+writable memory region at 0x{:x}, {} bytes",
+                            region.base_address, region.region_size
+                        ),
+                    });
+                }
             }
         }
 
@@ -587,10 +611,14 @@ fn run_service() -> Result<()> {
                 );
             }
         }
-    });
+        }))
+    } else {
+        None
+    };
 
     let registry_behavior = Arc::clone(&behavior);
-    let registry_telemetry = RegistryTelemetry::start(Duration::from_secs(2), move |event| {
+    let registry_telemetry = if config.enable_registry_telemetry {
+        Some(RegistryTelemetry::start(Duration::from_secs(2), move |event| {
         if matches!(
             event.kind,
             RegistryEventKind::Added | RegistryEventKind::Modified
@@ -624,14 +652,18 @@ fn run_service() -> Result<()> {
                 }
             }
         }
-    });
+        }))
+    } else {
+        None
+    };
 
     let update_stop = Arc::new(AtomicBool::new(false));
     let update_stop_worker = Arc::clone(&update_stop);
     let update_config = config.clone();
-    let update_thread = thread::Builder::new()
-        .name("bdfr-sentinel-definition-updater".to_string())
-        .spawn(move || {
+    let update_thread = if config.enable_definition_updates {
+        thread::Builder::new()
+            .name("bdfr-sentinel-definition-updater".to_string())
+            .spawn(move || {
             let interval = Duration::from_secs(
                 update_config
                     .definition_update_interval_minutes
@@ -651,8 +683,11 @@ fn run_service() -> Result<()> {
                     slept += slice;
                 }
             }
-        })
-        .ok();
+            })
+            .ok()
+    } else {
+        None
+    };
 
     let amsi_active = amsi
         .lock()
@@ -661,10 +696,10 @@ fn run_service() -> Result<()> {
     write_status_snapshot(
         &config,
         "running",
-        true,
-        true,
-        true,
-        true,
+        monitor.is_some(),
+        process_telemetry.is_some(),
+        registry_telemetry.is_some(),
+        config.enable_memory_telemetry && process_telemetry.is_some(),
         amsi_active,
         etw_process.is_some(),
         minifilter_broker.is_some(),
@@ -697,9 +732,15 @@ fn run_service() -> Result<()> {
     if let Some(etw) = etw_process.as_mut() {
         etw.stop();
     }
-    registry_telemetry.stop();
-    process_telemetry.stop();
-    monitor.stop();
+    if let Some(registry) = registry_telemetry.as_ref() {
+        registry.stop();
+    }
+    if let Some(process) = process_telemetry.as_ref() {
+        process.stop();
+    }
+    if let Some(monitor) = monitor.as_mut() {
+        monitor.stop();
+    }
     write_status_snapshot(
         &config, "stopped", false, false, false, false, false, false, false,
     );
