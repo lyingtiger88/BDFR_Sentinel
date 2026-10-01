@@ -104,11 +104,7 @@ mod windows_impl {
     #[link(name = "kernel32")]
     extern "system" {
         fn CloseHandle(handle: *mut c_void) -> i32;
-        fn QueryDosDeviceW(
-            device_name: *const u16,
-            target_path: *mut u16,
-            max_chars: u32,
-        ) -> u32;
+        fn QueryDosDeviceW(device_name: *const u16, target_path: *mut u16, max_chars: u32) -> u32;
     }
 
     pub struct MinifilterBroker {
@@ -265,8 +261,7 @@ mod windows_impl {
             .position(|value| *value == 0)
             .unwrap_or(wire.path.len());
         let native_path = String::from_utf16_lossy(&wire.path[..len]);
-        let path = native_to_dos_path(&native_path)
-            .unwrap_or_else(|| PathBuf::from(native_path));
+        let path = native_to_dos_path(&native_path).unwrap_or_else(|| PathBuf::from(native_path));
 
         MinifilterRequest {
             process_id: wire.process_id,
