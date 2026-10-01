@@ -18,6 +18,19 @@ BdfrPreCreate(
     _Flt_CompletionContext_Outptr_ PVOID *CompletionContext
 );
 
+FLT_PREOP_CALLBACK_STATUS
+BdfrPreAcquireForSectionSynchronization(
+    _Inout_ PFLT_CALLBACK_DATA Data,
+    _In_ PCFLT_RELATED_OBJECTS FltObjects,
+    _Flt_CompletionContext_Outptr_ PVOID *CompletionContext
+);
+
+FLT_PREOP_CALLBACK_STATUS
+BdfrEvaluateExecution(
+    _Inout_ PFLT_CALLBACK_DATA Data,
+    _In_ ACCESS_MASK DesiredAccess
+);
+
 NTSTATUS
 BdfrConnect(
     _In_ PFLT_PORT ClientPort,
@@ -37,6 +50,12 @@ CONST FLT_OPERATION_REGISTRATION gBdfrCallbacks[] = {
         IRP_MJ_CREATE,
         0,
         BdfrPreCreate,
+        NULL
+    },
+    {
+        IRP_MJ_ACQUIRE_FOR_SECTION_SYNCHRONIZATION,
+        0,
+        BdfrPreAcquireForSectionSynchronization,
         NULL
     },
     { IRP_MJ_OPERATION_END }
@@ -203,12 +222,6 @@ BdfrPreCreate(
 )
 {
     ACCESS_MASK desiredAccess;
-    NTSTATUS status;
-    PFLT_FILE_NAME_INFORMATION nameInfo = NULL;
-    BDFR_SCAN_REQUEST request;
-    BDFR_SCAN_REPLY reply;
-    ULONG replySize = sizeof(reply);
-    LARGE_INTEGER timeout;
 
     UNREFERENCED_PARAMETER(FltObjects);
     UNREFERENCED_PARAMETER(CompletionContext);
@@ -225,6 +238,56 @@ BdfrPreCreate(
     if ((desiredAccess & FILE_EXECUTE) == 0) {
         return FLT_PREOP_SUCCESS_NO_CALLBACK;
     }
+
+    return BdfrEvaluateExecution(Data, desiredAccess);
+}
+
+FLT_PREOP_CALLBACK_STATUS
+BdfrPreAcquireForSectionSynchronization(
+    _Inout_ PFLT_CALLBACK_DATA Data,
+    _In_ PCFLT_RELATED_OBJECTS FltObjects,
+    _Flt_CompletionContext_Outptr_ PVOID *CompletionContext
+)
+{
+    ULONG pageProtection;
+    const ULONG executeMask =
+        PAGE_EXECUTE |
+        PAGE_EXECUTE_READ |
+        PAGE_EXECUTE_READWRITE |
+        PAGE_EXECUTE_WRITECOPY;
+
+    UNREFERENCED_PARAMETER(FltObjects);
+    UNREFERENCED_PARAMETER(CompletionContext);
+
+    if (gBdfrClientPort == NULL ||
+        Data->RequestorMode == KernelMode ||
+        Data->Iopb->Parameters.AcquireForSectionSynchronization.SyncType !=
+            SyncTypeCreateSection) {
+        return FLT_PREOP_SUCCESS_NO_CALLBACK;
+    }
+
+    pageProtection =
+        Data->Iopb->Parameters.AcquireForSectionSynchronization.PageProtection;
+
+    if ((pageProtection & executeMask) == 0) {
+        return FLT_PREOP_SUCCESS_NO_CALLBACK;
+    }
+
+    return BdfrEvaluateExecution(Data, FILE_EXECUTE);
+}
+
+FLT_PREOP_CALLBACK_STATUS
+BdfrEvaluateExecution(
+    _Inout_ PFLT_CALLBACK_DATA Data,
+    _In_ ACCESS_MASK DesiredAccess
+)
+{
+    NTSTATUS status;
+    PFLT_FILE_NAME_INFORMATION nameInfo = NULL;
+    BDFR_SCAN_REQUEST request;
+    BDFR_SCAN_REPLY reply;
+    ULONG replySize = sizeof(reply);
+    LARGE_INTEGER timeout;
 
     status = FltGetFileNameInformation(
         Data,
@@ -246,8 +309,8 @@ BdfrPreCreate(
     RtlZeroMemory(&reply, sizeof(reply));
 
     request.Version = BDFR_PROTOCOL_VERSION;
-    request.ProcessId = HandleToULong(PsGetCurrentProcessId());
-    request.DesiredAccess = desiredAccess;
+    request.ProcessId = FltGetRequestorProcessId(Data);
+    request.DesiredAccess = DesiredAccess;
 
     if (nameInfo->Name.Buffer != NULL && nameInfo->Name.Length > 0) {
         ULONG chars = nameInfo->Name.Length / sizeof(WCHAR);
@@ -265,9 +328,10 @@ BdfrPreCreate(
     FltReleaseFileNameInformation(nameInfo);
 
     //
-    // Two-second relative timeout. Failure/timeouts are intentionally
-    // fail-open so the filter cannot brick the endpoint if the service
-    // is unavailable.
+    // Two-second relative timeout. Fail-open is intentional: if the
+    // user-mode service is unavailable, slow, or returns an invalid
+    // protocol reply, execution proceeds instead of risking an
+    // unbootable endpoint.
     //
     timeout.QuadPart = -(2LL * 10LL * 1000LL * 1000LL);
 
