@@ -88,8 +88,7 @@ fn main() -> Result<()> {
 fn init_logging() {
     let _ = tracing_subscriber::fmt()
         .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "info".into()),
+            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()),
         )
         .try_init();
 }
@@ -125,8 +124,7 @@ fn install_service() -> Result<()> {
 }
 
 fn uninstall_service() -> Result<()> {
-    let manager =
-        ServiceManager::local_computer(None::<&str>, ServiceManagerAccess::CONNECT)?;
+    let manager = ServiceManager::local_computer(None::<&str>, ServiceManagerAccess::CONNECT)?;
     let service = manager.open_service(
         SERVICE_NAME,
         ServiceAccess::QUERY_STATUS | ServiceAccess::STOP | ServiceAccess::DELETE,
@@ -148,8 +146,7 @@ fn uninstall_service() -> Result<()> {
 }
 
 fn start_service() -> Result<()> {
-    let manager =
-        ServiceManager::local_computer(None::<&str>, ServiceManagerAccess::CONNECT)?;
+    let manager = ServiceManager::local_computer(None::<&str>, ServiceManagerAccess::CONNECT)?;
     let service = manager.open_service(
         SERVICE_NAME,
         ServiceAccess::START | ServiceAccess::QUERY_STATUS,
@@ -160,8 +157,7 @@ fn start_service() -> Result<()> {
 }
 
 fn stop_service() -> Result<()> {
-    let manager =
-        ServiceManager::local_computer(None::<&str>, ServiceManagerAccess::CONNECT)?;
+    let manager = ServiceManager::local_computer(None::<&str>, ServiceManagerAccess::CONNECT)?;
     let service = manager.open_service(
         SERVICE_NAME,
         ServiceAccess::STOP | ServiceAccess::QUERY_STATUS,
@@ -172,8 +168,7 @@ fn stop_service() -> Result<()> {
 }
 
 fn print_status() -> Result<()> {
-    let manager =
-        ServiceManager::local_computer(None::<&str>, ServiceManagerAccess::CONNECT)?;
+    let manager = ServiceManager::local_computer(None::<&str>, ServiceManagerAccess::CONNECT)?;
     let service = manager.open_service(SERVICE_NAME, ServiceAccess::QUERY_STATUS)?;
     let status = service.query_status()?;
     println!("{:?}", status.current_state);
@@ -190,17 +185,15 @@ fn run_service() -> Result<()> {
     let stopped = Arc::new(AtomicBool::new(false));
     let stopped_for_handler = Arc::clone(&stopped);
 
-    let status_handle = service_control_handler::register(
-        SERVICE_NAME,
-        move |control| match control {
+    let status_handle =
+        service_control_handler::register(SERVICE_NAME, move |control| match control {
             ServiceControl::Stop | ServiceControl::Shutdown => {
                 stopped_for_handler.store(true, Ordering::Relaxed);
                 ServiceControlHandlerResult::NoError
             }
             ServiceControl::Interrogate => ServiceControlHandlerResult::NoError,
             _ => ServiceControlHandlerResult::NotImplemented,
-        },
-    )?;
+        })?;
 
     status_handle.set_service_status(ServiceStatus {
         service_type: ServiceType::OWN_PROCESS,
@@ -214,7 +207,10 @@ fn run_service() -> Result<()> {
 
     ensure_config_exists()?;
     let config = load_config()?;
-    let scanner = Arc::new(build_scanner(config.hdb_path.as_deref(), config.hsb_path.as_deref())?);
+    let scanner = Arc::new(build_scanner(
+        config.hdb_path.as_deref(),
+        config.hsb_path.as_deref(),
+    )?);
 
     let realtime_config = RealtimeConfig {
         paths: config.watch_paths.clone(),
@@ -229,13 +225,12 @@ fn run_service() -> Result<()> {
     monitor.start(move |event| {
         if let Some(report) = event.report {
             if report.verdict.level == ThreatLevel::Malicious && auto_quarantine {
-                match QuarantineStore::open(&quarantine_dir)
-                    .and_then(|store| {
-                        store.quarantine_file(
-                            &event.path,
-                            "malware detected by BDFR Sentinel real-time protection",
-                        )
-                    }) {
+                match QuarantineStore::open(&quarantine_dir).and_then(|store| {
+                    store.quarantine_file(
+                        &event.path,
+                        "malware detected by BDFR Sentinel real-time protection",
+                    )
+                }) {
                     Ok(entry) => {
                         warn!(
                             path = %event.path.display(),
@@ -292,7 +287,10 @@ fn run_service() -> Result<()> {
 fn run_protection_loop() -> Result<()> {
     ensure_config_exists()?;
     let config = load_config()?;
-    let scanner = Arc::new(build_scanner(config.hdb_path.as_deref(), config.hsb_path.as_deref())?);
+    let scanner = Arc::new(build_scanner(
+        config.hdb_path.as_deref(),
+        config.hsb_path.as_deref(),
+    )?);
     let quarantine_dir = config.quarantine_dir.clone();
     let auto_quarantine = config.auto_quarantine;
 
@@ -305,11 +303,7 @@ fn run_protection_loop() -> Result<()> {
     let mut monitor = RealtimeMonitor::new(realtime_config, scanner)?;
     monitor.start(move |event| {
         if let Some(report) = event.report {
-            println!(
-                "[{:?}] {}",
-                report.verdict.level,
-                event.path.display()
-            );
+            println!("[{:?}] {}", report.verdict.level, event.path.display());
 
             if report.verdict.level == ThreatLevel::Malicious && auto_quarantine {
                 let _ = QuarantineStore::open(&quarantine_dir).and_then(|store| {
@@ -392,8 +386,7 @@ fn ensure_config_exists() -> Result<()> {
 
 fn load_config() -> Result<ServiceConfig> {
     let path = config_path();
-    let bytes = fs::read(&path)
-        .with_context(|| format!("failed to read {}", path.display()))?;
+    let bytes = fs::read(&path).with_context(|| format!("failed to read {}", path.display()))?;
     Ok(serde_json::from_slice(&bytes)?)
 }
 
