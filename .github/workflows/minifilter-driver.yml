@@ -23,27 +23,53 @@ jobs:
         run: |
           winget install --id Microsoft.WindowsWDK.10.0.28000 --exact --silent --accept-package-agreements --accept-source-agreements
 
-      - name: Locate MSBuild
-        id: msbuild
+      - name: Locate WDK and MSVC
+        id: tools
         shell: pwsh
         run: |
-          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
-          $path = & $vswhere -latest -products * -requires Microsoft.Component.MSBuild -find MSBuild\**\Bin\MSBuild.exe | Select-Object -First 1
-          if (-not $path) { throw "MSBuild not found" }
-          "path=$path" >> $env:GITHUB_OUTPUT
+          $kits = "${env:ProgramFiles(x86)}\Windows Kits\10"
+          $inc = Get-ChildItem "$kits\Include" -Directory |
+            Where-Object { Test-Path (Join-Path $_.FullName "km\fltKernel.h") } |
+            Sort-Object Name -Descending | Select-Object -First 1
+          if (-not $inc) { throw "WDK kernel headers with fltKernel.h not found" }
 
-      - name: Build x64 Release minifilter
+          $lib = Join-Path $kits "Lib\$($inc.Name)\km\x64"
+          if (-not (Test-Path (Join-Path $lib "FltMgr.lib"))) { throw "FltMgr.lib not found in $lib" }
+
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vs = & $vswhere -latest -products * -property installationPath
+          if (-not $vs) { throw "Visual Studio not found" }
+          $cl = Get-ChildItem "$vs\VC\Tools\MSVC" -Recurse -Filter cl.exe |
+            Where-Object { $_.FullName -match 'Hostx64\\x64\\cl.exe$' } |
+            Sort-Object FullName -Descending | Select-Object -First 1
+          if (-not $cl) { throw "x64 cl.exe not found" }
+          $link = Join-Path $cl.Directory.FullName "link.exe"
+
+          "km=$($inc.FullName)\km" >> $env:GITHUB_OUTPUT
+          "shared=$($inc.FullName)\shared" >> $env:GITHUB_OUTPUT
+          "lib=$lib" >> $env:GITHUB_OUTPUT
+          "cl=$($cl.FullName)" >> $env:GITHUB_OUTPUT
+          "link=$link" >> $env:GITHUB_OUTPUT
+
+      - name: Compile x64 minifilter
         shell: pwsh
         run: |
-          & '${{ steps.msbuild.outputs.path }}' drivers\minifilter\BDFRSentinelFilter.vcxproj /m /p:Configuration=Release /p:Platform=x64
+          New-Item -ItemType Directory -Force drivers\minifilter\bin\Release | Out-Null
+          & '${{ steps.tools.outputs.cl }}' /nologo /c /TC /kernel /Oi /GS- /Zl /W4 /WX- /D_AMD64_ /DAMD64 /D_WIN64 /DWIN64 /I'${{ steps.tools.outputs.km }}' /I'${{ steps.tools.outputs.shared }}' /Fo:drivers\minifilter\bin\Release\BDFRSentinelFilter.obj drivers\minifilter\BDFRSentinelFilter.c
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Link x64 minifilter
+        shell: pwsh
+        run: |
+          $lib = '${{ steps.tools.outputs.lib }}'
+          & '${{ steps.tools.outputs.link }}' /nologo /DRIVER /SUBSYSTEM:NATIVE /ENTRY:DriverEntry /NODEFAULTLIB /INCREMENTAL:NO /OPT:REF /OPT:ICF /OUT:drivers\minifilter\bin\Release\BDFRSentinelFilter.sys drivers\minifilter\bin\Release\BDFRSentinelFilter.obj "$lib\ntoskrnl.lib" "$lib\hal.lib" "$lib\FltMgr.lib"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Collect driver package
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force driver-dist | Out-Null
-          $sys = Get-ChildItem drivers\minifilter -Recurse -Filter BDFRSentinelFilter.sys | Select-Object -First 1
-          if (-not $sys) { throw "BDFRSentinelFilter.sys not found" }
-          Copy-Item $sys.FullName driver-dist\BDFRSentinelFilter.sys
+          Copy-Item drivers\minifilter\bin\Release\BDFRSentinelFilter.sys driver-dist\BDFRSentinelFilter.sys
           Copy-Item drivers\minifilter\BDFRSentinelFilter.inf driver-dist\BDFRSentinelFilter.inf
           Copy-Item drivers\minifilter\README.md driver-dist\README.md
           Compress-Archive driver-dist\* BDFR-Sentinel-Minifilter-x64-UNSIGNED.zip -Force
