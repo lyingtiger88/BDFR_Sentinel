@@ -26,12 +26,13 @@ ServiceType    = 2
 StartType      = 3
 ErrorControl   = 1
 LoadOrderGroup = "FSFilter Anti-Virus"
-AddReg         = Instances.AddReg
+AddReg         = MiniFilter.AddRegistry
 
-[Instances.AddReg]
-HKR,"Instances","DefaultInstance",0x00000000,%DefaultInstance%
-HKR,"Instances\%DefaultInstance%","Altitude",0x00000000,%Altitude%
-HKR,"Instances\%DefaultInstance%","Flags",0x00010001,0
+[MiniFilter.AddRegistry]
+HKR,,"SupportedFeatures",0x00010001,0x3
+HKR,"Parameters\Instances","DefaultInstance",0x00000000,%DefaultInstance%
+HKR,"Parameters\Instances\%DefaultInstance%","Altitude",0x00000000,%Altitude%
+HKR,"Parameters\Instances\%DefaultInstance%","Flags",0x00010001,0
 
 [Strings]
 ProviderName       = "BDFR"
@@ -39,6 +40,6 @@ ServiceName        = "BDFRSentinelFilter"
 ServiceDisplayName = "BDFR Sentinel Minifilter"
 ServiceDescription = "Pre-execution file policy minifilter for BDFR Sentinel"
 DefaultInstance    = "BDFR Sentinel Instance"
-; Test/development altitude only. A production minifilter requires an
-; officially assigned Microsoft altitude before public distribution.
+; Test/development altitude only. Public distribution requires an
+; officially assigned Microsoft minifilter altitude.
 Altitude           = "370030"
