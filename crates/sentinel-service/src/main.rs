@@ -78,6 +78,15 @@ impl ServiceConfig {
 }
 
 #[derive(Debug, Serialize)]
+struct ThreatEventRecord {
+    unix_time: u64,
+    source: &'static str,
+    action: &'static str,
+    path: String,
+    details: String,
+}
+
+#[derive(Debug, Serialize)]
 struct StatusSnapshot {
     service: &'static str,
     protection: &'static str,
@@ -270,6 +279,12 @@ fn run_service() -> Result<()> {
                                 }) {
                                     Ok(entry) => {
                                         quarantined_by_amsi = true;
+                                        record_threat_event(
+                                            "amsi",
+                                            "quarantine",
+                                            &event.path,
+                                            format!("quarantine_id={}", entry.id.0),
+                                        );
                                         warn!(
                                             path = %event.path.display(),
                                             quarantine_id = %entry.id.0,
@@ -317,6 +332,12 @@ fn run_service() -> Result<()> {
                     )
                 }) {
                     Ok(entry) => {
+                        record_threat_event(
+                            "realtime-file",
+                            "quarantine",
+                            &event.path,
+                            format!("quarantine_id={}", entry.id.0),
+                        );
                         warn!(
                             path = %event.path.display(),
                             quarantine_id = %entry.id.0,
@@ -342,6 +363,12 @@ fn run_service() -> Result<()> {
     let mut minifilter_broker = match MinifilterBroker::start(move |request| {
         match policy_scanner.scan_file(&request.path) {
             Ok(report) if report.verdict.level == ThreatLevel::Malicious => {
+                record_threat_event(
+                    "minifilter",
+                    "block",
+                    &request.path,
+                    format!("pid={}", request.process_id),
+                );
                 warn!(
                     pid = request.process_id,
                     path = %request.path.display(),
@@ -488,6 +515,12 @@ fn run_service() -> Result<()> {
 
         match process_scanner.scan_file(executable) {
             Ok(report) if report.verdict.level == ThreatLevel::Malicious => {
+                record_threat_event(
+                    "process",
+                    "detect",
+                    executable,
+                    format!("pid={}", event.process.pid),
+                );
                 warn!(
                     pid = event.process.pid,
                     path = %executable.display(),
@@ -767,6 +800,49 @@ fn build_scanner(hdb_path: Option<&Path>, hsb_path: Option<&Path>) -> Result<Fil
     }
 
     Ok(FileScanner::new(ScannerConfig::default(), registry))
+}
+
+fn threat_events_path() -> PathBuf {
+    sentinel_dir().join("events.jsonl")
+}
+
+fn record_threat_event(
+    source: &'static str,
+    action: &'static str,
+    path: &Path,
+    details: impl Into<String>,
+) {
+    use std::io::Write as _;
+
+    let unix_time = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_secs())
+        .unwrap_or_default();
+
+    let record = ThreatEventRecord {
+        unix_time,
+        source,
+        action,
+        path: path.display().to_string(),
+        details: details.into(),
+    };
+
+    let Ok(line) = serde_json::to_string(&record) else {
+        return;
+    };
+
+    let path = threat_events_path();
+    if let Some(parent) = path.parent() {
+        let _ = fs::create_dir_all(parent);
+    }
+
+    if let Ok(mut file) = fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+    {
+        let _ = writeln!(file, "{line}");
+    }
 }
 
 fn sentinel_dir() -> PathBuf {
