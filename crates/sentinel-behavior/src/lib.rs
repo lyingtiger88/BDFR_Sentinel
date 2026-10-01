@@ -1,6 +1,6 @@
 use sentinel_core::ThreatLevel;
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::time::{Duration, Instant};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -28,7 +28,14 @@ pub struct BehaviorAssessment {
     pub pid: u32,
     pub score: u32,
     pub level: ThreatLevel,
+    pub distinct_signal_kinds: usize,
     pub signals: Vec<BehaviorSignal>,
+}
+
+impl BehaviorAssessment {
+    pub fn is_actionable_malicious(&self) -> bool {
+        self.level == ThreatLevel::Malicious && self.distinct_signal_kinds >= 3
+    }
 }
 
 #[derive(Debug)]
@@ -84,8 +91,10 @@ impl BehaviorEngine {
 
         let mut score = 0;
         let mut signals = Vec::with_capacity(queue.len());
+        let mut distinct_kinds = HashSet::new();
         for item in queue.iter() {
             score += item.signal.weight;
+            distinct_kinds.insert(item.signal.kind);
             signals.push(item.signal.clone());
         }
 
@@ -101,6 +110,7 @@ impl BehaviorEngine {
             pid: signals.first().map(|s| s.pid).unwrap_or_default(),
             score,
             level,
+            distinct_signal_kinds: distinct_kinds.len(),
             signals,
         }
     }
@@ -201,6 +211,37 @@ mod tests {
             details: "two".to_string(),
         });
         assert_eq!(second.level, ThreatLevel::Suspicious);
+    }
+
+    #[test]
+    fn actionable_malicious_requires_three_distinct_signal_kinds() {
+        let mut engine = BehaviorEngine::with_thresholds(Duration::from_secs(30), 40, 80);
+
+        let first = engine.observe(BehaviorSignal {
+            pid: 42,
+            kind: BehaviorSignalKind::ScriptInterpreter,
+            weight: 45,
+            details: "script".to_string(),
+        });
+        assert!(!first.is_actionable_malicious());
+
+        let second = engine.observe(BehaviorSignal {
+            pid: 42,
+            kind: BehaviorSignalKind::SuspiciousParentChild,
+            weight: 45,
+            details: "parent-child".to_string(),
+        });
+        assert_eq!(second.level, ThreatLevel::Malicious);
+        assert!(!second.is_actionable_malicious());
+
+        let third = engine.observe(BehaviorSignal {
+            pid: 42,
+            kind: BehaviorSignalKind::RwxMemory,
+            weight: 45,
+            details: "rwx".to_string(),
+        });
+        assert!(third.is_actionable_malicious());
+        assert_eq!(third.distinct_signal_kinds, 3);
     }
 
     #[test]
