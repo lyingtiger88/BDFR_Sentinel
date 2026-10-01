@@ -190,6 +190,48 @@ struct ProtectionSnapshot {
     minifilter_connected: bool,
 }
 
+fn default_enabled() -> bool {
+    true
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct ProtectionPreferences {
+    #[serde(default = "default_enabled")]
+    enable_realtime_file_monitor: bool,
+    #[serde(default = "default_enabled")]
+    enable_process_telemetry: bool,
+    #[serde(default = "default_enabled")]
+    enable_registry_telemetry: bool,
+    #[serde(default = "default_enabled")]
+    enable_memory_telemetry: bool,
+    #[serde(default = "default_enabled")]
+    enable_amsi: bool,
+    #[serde(default = "default_enabled")]
+    enable_etw: bool,
+    #[serde(default = "default_enabled")]
+    enable_minifilter: bool,
+    #[serde(default = "default_enabled")]
+    enable_definition_updates: bool,
+    #[serde(default = "default_enabled")]
+    auto_quarantine: bool,
+}
+
+impl Default for ProtectionPreferences {
+    fn default() -> Self {
+        Self {
+            enable_realtime_file_monitor: true,
+            enable_process_telemetry: true,
+            enable_registry_telemetry: true,
+            enable_memory_telemetry: true,
+            enable_amsi: true,
+            enable_etw: true,
+            enable_minifilter: true,
+            enable_definition_updates: true,
+            auto_quarantine: true,
+        }
+    }
+}
+
 struct SentinelApp {
     page: Page,
     target: Option<PathBuf>,
@@ -224,6 +266,8 @@ struct SentinelApp {
     dragging_gauge: Option<GaugeKind>,
     service_state: String,
     protection_snapshot: ProtectionSnapshot,
+    protection_preferences: ProtectionPreferences,
+    protection_preferences_loaded: bool,
     last_service_refresh: Instant,
 }
 
@@ -271,11 +315,14 @@ impl SentinelApp {
             dragging_gauge: None,
             service_state: "Checking…".to_string(),
             protection_snapshot: ProtectionSnapshot::default(),
+            protection_preferences: ProtectionPreferences::default(),
+            protection_preferences_loaded: false,
             last_service_refresh: Instant::now() - Duration::from_secs(10),
         };
         app.refresh_quarantine();
         app.refresh_metrics();
         app.refresh_service_state();
+        app.load_service_preferences();
         app
     }
 
@@ -354,6 +401,102 @@ impl SentinelApp {
             }
             Err(err) => {
                 self.status_text = format!("Could not run protection service command: {err}");
+            }
+        }
+    }
+
+    fn load_service_preferences(&mut self) {
+        let exe = service_executable_path();
+        if !exe.is_file() {
+            return;
+        }
+
+        match Command::new(&exe).args(["config", "show"]).output() {
+            Ok(output) if output.status.success() => {
+                if let Ok(preferences) =
+                    serde_json::from_slice::<ProtectionPreferences>(&output.stdout)
+                {
+                    self.protection_preferences = preferences;
+                    self.protection_preferences_loaded = true;
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn apply_protection_preferences(&mut self) {
+        let exe = service_executable_path();
+        if !exe.is_file() {
+            self.status_text = "Protection service executable was not found.".to_string();
+            return;
+        }
+
+        let assignments = vec![
+            format!(
+                "realtime_file_monitor={}",
+                self.protection_preferences.enable_realtime_file_monitor
+            ),
+            format!(
+                "process_telemetry={}",
+                self.protection_preferences.enable_process_telemetry
+            ),
+            format!(
+                "registry_telemetry={}",
+                self.protection_preferences.enable_registry_telemetry
+            ),
+            format!(
+                "memory_telemetry={}",
+                self.protection_preferences.enable_memory_telemetry
+            ),
+            format!("amsi={}", self.protection_preferences.enable_amsi),
+            format!("etw={}", self.protection_preferences.enable_etw),
+            format!(
+                "minifilter={}",
+                self.protection_preferences.enable_minifilter
+            ),
+            format!(
+                "definition_updates={}",
+                self.protection_preferences.enable_definition_updates
+            ),
+            format!(
+                "auto_quarantine={}",
+                self.protection_preferences.auto_quarantine
+            ),
+        ];
+
+        let escaped_exe = exe.display().to_string().replace(''', "''");
+        let mut argument_literals = vec![
+            "'config'".to_string(),
+            "'apply-restart'".to_string(),
+        ];
+        argument_literals.extend(
+            assignments
+                .iter()
+                .map(|value| format!("'{}'", value.replace(''', "''"))),
+        );
+
+        let script = format!(
+            "Start-Process -FilePath '{}' -ArgumentList @({}) -Verb RunAs -Wait",
+            escaped_exe,
+            argument_literals.join(",")
+        );
+
+        match Command::new("powershell.exe")
+            .args(["-NoProfile", "-Command", &script])
+            .status()
+        {
+            Ok(status) if status.success() => {
+                self.status_text =
+                    "Protection settings applied; service restart requested.".to_string();
+                self.last_service_refresh = Instant::now() - Duration::from_secs(10);
+                self.refresh_service_state();
+                self.load_service_preferences();
+            }
+            Ok(_) => {
+                self.status_text = "Failed to apply protection settings.".to_string();
+            }
+            Err(err) => {
+                self.status_text = format!("Could not apply protection settings: {err}");
             }
         }
     }
@@ -1177,6 +1320,89 @@ impl SentinelApp {
                     ThemeMode::Dark => "Uses the dark Fluent palette.",
                     ThemeMode::Light => "Uses the light Fluent palette.",
                 })
+                .size(11.0)
+                .color(ui.visuals().weak_text_color()),
+            );
+        });
+
+        ui.add_space(14.0);
+
+        settings_card(ui, "Protection controls", |ui| {
+            ui.label(
+                egui::RichText::new(
+                    "Choose which always-on protection subsystems should run in the Windows service.",
+                )
+                .color(ui.visuals().weak_text_color()),
+            );
+            ui.add_space(8.0);
+
+            if !self.protection_preferences_loaded {
+                ui.label(
+                    egui::RichText::new(
+                        "Service configuration is unavailable until the protection service is installed.",
+                    )
+                    .color(WARN),
+                );
+            }
+
+            ui.checkbox(
+                &mut self.protection_preferences.enable_realtime_file_monitor,
+                "Real-time file monitoring",
+            );
+            ui.checkbox(
+                &mut self.protection_preferences.enable_process_telemetry,
+                "Process telemetry and process-image scanning",
+            );
+            ui.checkbox(
+                &mut self.protection_preferences.enable_registry_telemetry,
+                "Registry persistence monitoring",
+            );
+            ui.checkbox(
+                &mut self.protection_preferences.enable_memory_telemetry,
+                "Executable/writable memory telemetry",
+            );
+            ui.checkbox(
+                &mut self.protection_preferences.enable_amsi,
+                "Windows AMSI script scanning",
+            );
+            ui.checkbox(
+                &mut self.protection_preferences.enable_etw,
+                "ETW process telemetry",
+            );
+            ui.checkbox(
+                &mut self.protection_preferences.enable_minifilter,
+                "Kernel Minifilter broker / pre-execution policy",
+            );
+            ui.checkbox(
+                &mut self.protection_preferences.enable_definition_updates,
+                "Signed definition update activation",
+            );
+            ui.checkbox(
+                &mut self.protection_preferences.auto_quarantine,
+                "Automatically quarantine confirmed malware",
+            );
+
+            ui.add_space(8.0);
+            ui.horizontal(|ui| {
+                if ui
+                    .add_enabled(
+                        self.protection_preferences_loaded,
+                        egui::Button::new("Apply & restart protection"),
+                    )
+                    .clicked()
+                {
+                    self.apply_protection_preferences();
+                }
+
+                if fluent_button(ui, "Reload", false).clicked() {
+                    self.load_service_preferences();
+                }
+            });
+
+            ui.label(
+                egui::RichText::new(
+                    "Minifilter can only become Active when a built and appropriately signed driver is installed.",
+                )
                 .size(11.0)
                 .color(ui.visuals().weak_text_color()),
             );
