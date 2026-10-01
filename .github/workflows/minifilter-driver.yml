@@ -23,76 +23,53 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Install current Windows Driver Kit
+      - name: Setup NuGet
+        uses: NuGet/setup-nuget@v2
+
+      - name: Restore pinned WDK and SDK packages
         shell: pwsh
         run: |
-          winget install --id Microsoft.WindowsWDK.10.0.28000 --exact --silent --accept-package-agreements --accept-source-agreements
+          nuget restore drivers\minifilter\packages.config `
+            -PackagesDirectory drivers\minifilter\packages `
+            -NonInteractive
 
-      - name: Locate WDK and MSVC
+      - name: Locate MSBuild
         id: tools
         shell: pwsh
         run: |
-          $kits = "${env:ProgramFiles(x86)}\Windows Kits\10"
-          $inc = Get-ChildItem "$kits\Include" -Directory |
-            Where-Object { Test-Path (Join-Path $_.FullName "km\fltKernel.h") } |
-            Sort-Object Name -Descending | Select-Object -First 1
-          if (-not $inc) { throw "WDK kernel headers with fltKernel.h not found" }
-
-          $lib = Join-Path $kits "Lib\$($inc.Name)\km\x64"
-          if (-not (Test-Path (Join-Path $lib "FltMgr.lib"))) { throw "FltMgr.lib not found in $lib" }
-
-          $ntdef = Get-ChildItem (Join-Path $kits "Include\$($inc.Name)") -Recurse -Filter ntdef.h |
-            Select-Object -First 1
-          if (-not $ntdef) { throw "ntdef.h not found in WDK include tree" }
-
           $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
-          $vs = & $vswhere -latest -products * -property installationPath
-          if (-not $vs) { throw "Visual Studio not found" }
-          $cl = Get-ChildItem "$vs\VC\Tools\MSVC" -Recurse -Filter cl.exe |
-            Where-Object { $_.FullName -match 'Hostx64\\x64\\cl.exe$' } |
-            Sort-Object FullName -Descending | Select-Object -First 1
-          if (-not $cl) { throw "x64 cl.exe not found" }
-          $link = Join-Path $cl.Directory.FullName "link.exe"
-          $msvcRoot = $cl.Directory.Parent.Parent.Parent.FullName
-          $msvcInclude = Join-Path $msvcRoot "include"
-          if (-not (Test-Path (Join-Path $msvcInclude "excpt.h"))) { throw "MSVC include directory not found" }
+          if (-not (Test-Path $vswhere)) { throw "vswhere.exe not found" }
 
-          "km=$($inc.FullName)\km" >> $env:GITHUB_OUTPUT
-          "shared=$($inc.FullName)\shared" >> $env:GITHUB_OUTPUT
-          "lib=$lib" >> $env:GITHUB_OUTPUT
-          "msvcinclude=$msvcInclude" >> $env:GITHUB_OUTPUT
-          "ntdefdir=$($ntdef.Directory.FullName)" >> $env:GITHUB_OUTPUT
-          "cl=$($cl.FullName)" >> $env:GITHUB_OUTPUT
-          "link=$link" >> $env:GITHUB_OUTPUT
+          $vs = & $vswhere -latest -products * -requires Microsoft.Component.MSBuild -property installationPath
+          if (-not $vs) { throw "Visual Studio with MSBuild not found" }
 
-      - name: Compile x64 minifilter
+          $msbuild = Join-Path $vs "MSBuild\Current\Bin\MSBuild.exe"
+          if (-not (Test-Path $msbuild)) { throw "MSBuild.exe not found at $msbuild" }
+
+          "msbuild=$msbuild" >> $env:GITHUB_OUTPUT
+
+      - name: Build x64 minifilter
         shell: pwsh
         run: |
-          New-Item -ItemType Directory -Force drivers\minifilter\bin\Release | Out-Null
-          $env:INCLUDE = @(
-            '${{ steps.tools.outputs.km }}',
-            '${{ steps.tools.outputs.shared }}',
-            '${{ steps.tools.outputs.ntdefdir }}',
-            '${{ steps.tools.outputs.msvcinclude }}'
-          ) -join ';'
-
-          Write-Host "INCLUDE=$env:INCLUDE"
-
-          & '${{ steps.tools.outputs.cl }}' /nologo /c /TC /kernel /Oi /GS- /Zl /W4 /WX- /D_AMD64_ /DAMD64 /D_WIN64 /DWIN64 /Fo:drivers\minifilter\bin\Release\BDFRSentinelFilter.obj drivers\minifilter\BDFRSentinelFilter.c
+          & '${{ steps.tools.outputs.msbuild }}' `
+            drivers\minifilter\BDFRSentinelFilter.vcxproj `
+            /m `
+            /p:Configuration=Release `
+            /p:Platform=x64
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-      - name: Link x64 minifilter
+      - name: Verify and package driver
         shell: pwsh
         run: |
-          $lib = '${{ steps.tools.outputs.lib }}'
-          & '${{ steps.tools.outputs.link }}' /nologo /DRIVER /SUBSYSTEM:NATIVE /ENTRY:DriverEntry /NODEFAULTLIB /INCREMENTAL:NO /OPT:REF /OPT:ICF /OUT:drivers\minifilter\bin\Release\BDFRSentinelFilter.sys drivers\minifilter\bin\Release\BDFRSentinelFilter.obj "$lib\ntoskrnl.lib" "$lib\hal.lib" "$lib\FltMgr.lib"
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $sys = Get-ChildItem drivers\minifilter -Filter BDFRSentinelFilter.sys -Recurse |
+            Sort-Object LastWriteTime -Descending |
+            Select-Object -First 1
 
-      - name: Collect driver package
-        shell: pwsh
-        run: |
+          if (-not $sys) { throw "BDFRSentinelFilter.sys was not produced" }
+
+          Write-Host "Driver built: $($sys.FullName)"
           New-Item -ItemType Directory -Force driver-dist | Out-Null
-          Copy-Item drivers\minifilter\bin\Release\BDFRSentinelFilter.sys driver-dist\BDFRSentinelFilter.sys
+          Copy-Item $sys.FullName driver-dist\BDFRSentinelFilter.sys
           Copy-Item drivers\minifilter\BDFRSentinelFilter.inf driver-dist\BDFRSentinelFilter.inf
           Copy-Item drivers\minifilter\README.md driver-dist\README.md
           Compress-Archive driver-dist\* BDFR-Sentinel-Minifilter-x64-UNSIGNED.zip -Force
