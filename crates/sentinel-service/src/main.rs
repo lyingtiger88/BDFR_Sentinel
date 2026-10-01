@@ -264,18 +264,16 @@ fn print_diagnostics() -> Result<()> {
         status_snapshot_exists: bool,
     }
 
-    let (service_installed, service_state) = match ServiceManager::local_computer(
-        None::<&str>,
-        ServiceManagerAccess::CONNECT,
-    )
-    .and_then(|manager| manager.open_service(SERVICE_NAME, ServiceAccess::QUERY_STATUS))
-    {
-        Ok(service) => match service.query_status() {
-            Ok(status) => (true, format!("{:?}", status.current_state)),
-            Err(_) => (true, "Unknown".to_string()),
-        },
-        Err(_) => (false, "NotInstalled".to_string()),
-    };
+    let (service_installed, service_state) =
+        match ServiceManager::local_computer(None::<&str>, ServiceManagerAccess::CONNECT)
+            .and_then(|manager| manager.open_service(SERVICE_NAME, ServiceAccess::QUERY_STATUS))
+        {
+            Ok(service) => match service.query_status() {
+                Ok(status) => (true, format!("{:?}", status.current_state)),
+                Err(_) => (true, "Unknown".to_string()),
+            },
+            Err(_) => (false, "NotInstalled".to_string()),
+        };
 
     let diagnostics = Diagnostics {
         service_installed,
@@ -349,8 +347,8 @@ fn run_service() -> Result<()> {
     let amsi_for_files = Arc::clone(&amsi);
 
     let mut monitor = if config.enable_realtime_file_monitor {
-            let mut monitor = RealtimeMonitor::new(realtime_config, Arc::clone(&scanner))?;
-            monitor.start(move |event| {
+        let mut monitor = RealtimeMonitor::new(realtime_config, Arc::clone(&scanner))?;
+        monitor.start(move |event| {
             let mut quarantined_by_amsi = false;
 
             if is_script_path(&event.path) {
@@ -447,19 +445,18 @@ fn run_service() -> Result<()> {
                     }
                 }
             }
-            })?;
-            Some(monitor)
-        } else {
-            None
-        };
-
+        })?;
+        Some(monitor)
+    } else {
+        None
+    };
 
     let policy_scanner = Arc::clone(&scanner);
     let policy_quarantine = config.quarantine_dir.clone();
     let policy_auto_quarantine = config.auto_quarantine;
 
     let mut minifilter_broker = if config.enable_minifilter {
-            match MinifilterBroker::start(move |request| {
+        match MinifilterBroker::start(move |request| {
             match policy_scanner.scan_file(&request.path) {
                 Ok(report) if report.verdict.level == ThreatLevel::Malicious => {
                     record_threat_event(
@@ -511,11 +508,10 @@ fn run_service() -> Result<()> {
                 info!(error = %err, "minifilter unavailable; continuing with user-mode protection");
                 None
             }
-            }
-        } else {
-            None
-        };
-
+        }
+    } else {
+        None
+    };
 
     let process_scanner = Arc::clone(&scanner);
     let behavior = Arc::new(Mutex::new(BehaviorEngine::default()));
@@ -525,7 +521,7 @@ fn run_service() -> Result<()> {
     let etw_names_for_callback = Arc::clone(&etw_process_names);
 
     let mut etw_process = if config.enable_etw {
-            match EtwProcessTelemetry::start(move |event| {
+        match EtwProcessTelemetry::start(move |event| {
             let parent_name = etw_names_for_callback
                 .lock()
                 .ok()
@@ -568,167 +564,177 @@ fn run_service() -> Result<()> {
                 warn!(error = %err, "ETW unavailable; polling process telemetry remains active");
                 None
             }
-            }
-        } else {
-            None
-        };
-
+        }
+    } else {
+        None
+    };
 
     let process_quarantine = config.quarantine_dir.clone();
     let process_auto_quarantine = config.auto_quarantine;
     let memory_telemetry_enabled = config.enable_memory_telemetry;
     let process_telemetry = if config.enable_process_telemetry {
-        Some(ProcessTelemetry::start(Duration::from_millis(750), move |event| {
-        if event.kind != ProcessEventKind::Started {
-            return;
-        }
-
-        let mut signals = process_start_signals(
-            event.process.pid,
-            None,
-            &event.process.name,
-            event.process.executable.as_deref(),
-            &event.process.command_line,
-        );
-
-        if memory_telemetry_enabled {
-            if let Ok(regions) = executable_writable_regions(event.process.pid) {
-                for region in regions.into_iter().take(4) {
-                    signals.push(BehaviorSignal {
-                        pid: event.process.pid,
-                        kind: BehaviorSignalKind::RwxMemory,
-                        weight: 45,
-                        details: format!(
-                            "executable+writable memory region at 0x{:x}, {} bytes",
-                            region.base_address, region.region_size
-                        ),
-                    });
+        Some(ProcessTelemetry::start(
+            Duration::from_millis(750),
+            move |event| {
+                if event.kind != ProcessEventKind::Started {
+                    return;
                 }
-            }
-        }
 
-        if let Ok(mut engine) = behavior.lock() {
-            for signal in signals {
-                let assessment = engine.observe(signal);
-                if assessment.level != ThreatLevel::Clean {
-                    warn!(
-                        pid = assessment.pid,
-                        score = assessment.score,
-                        level = ?assessment.level,
-                        "behavior correlation raised process risk"
-                    );
-                }
-            }
-        }
-
-        let Some(executable) = event.process.executable.as_deref() else {
-            return;
-        };
-
-        match process_scanner.scan_file(executable) {
-            Ok(report) if report.verdict.level == ThreatLevel::Malicious => {
-                record_threat_event(
-                    "process",
-                    "detect",
-                    executable,
-                    format!("pid={}", event.process.pid),
-                );
-                warn!(
-                    pid = event.process.pid,
-                    path = %executable.display(),
-                    "malicious process image detected"
+                let mut signals = process_start_signals(
+                    event.process.pid,
+                    None,
+                    &event.process.name,
+                    event.process.executable.as_deref(),
+                    &event.process.command_line,
                 );
 
-                match terminate_process_for_malware(event.process.pid) {
-                    Ok(()) => {
+                if memory_telemetry_enabled {
+                    if let Ok(regions) = executable_writable_regions(event.process.pid) {
+                        for region in regions.into_iter().take(4) {
+                            signals.push(BehaviorSignal {
+                                pid: event.process.pid,
+                                kind: BehaviorSignalKind::RwxMemory,
+                                weight: 45,
+                                details: format!(
+                                    "executable+writable memory region at 0x{:x}, {} bytes",
+                                    region.base_address, region.region_size
+                                ),
+                            });
+                        }
+                    }
+                }
+
+                if let Ok(mut engine) = behavior.lock() {
+                    for signal in signals {
+                        let assessment = engine.observe(signal);
+                        if assessment.level != ThreatLevel::Clean {
+                            warn!(
+                                pid = assessment.pid,
+                                score = assessment.score,
+                                level = ?assessment.level,
+                                "behavior correlation raised process risk"
+                            );
+                        }
+                    }
+                }
+
+                let Some(executable) = event.process.executable.as_deref() else {
+                    return;
+                };
+
+                match process_scanner.scan_file(executable) {
+                    Ok(report) if report.verdict.level == ThreatLevel::Malicious => {
                         record_threat_event(
                             "process",
-                            "terminate",
+                            "detect",
                             executable,
                             format!("pid={}", event.process.pid),
                         );
                         warn!(
                             pid = event.process.pid,
                             path = %executable.display(),
-                            "terminated confirmed malicious process"
+                            "malicious process image detected"
                         );
-                        thread::sleep(Duration::from_millis(150));
+
+                        match terminate_process_for_malware(event.process.pid) {
+                            Ok(()) => {
+                                record_threat_event(
+                                    "process",
+                                    "terminate",
+                                    executable,
+                                    format!("pid={}", event.process.pid),
+                                );
+                                warn!(
+                                    pid = event.process.pid,
+                                    path = %executable.display(),
+                                    "terminated confirmed malicious process"
+                                );
+                                thread::sleep(Duration::from_millis(150));
+                            }
+                            Err(err) => {
+                                warn!(
+                                    pid = event.process.pid,
+                                    path = %executable.display(),
+                                    error = %err,
+                                    "could not terminate confirmed malicious process"
+                                );
+                            }
+                        }
+
+                        if process_auto_quarantine {
+                            if let Err(err) =
+                                QuarantineStore::open(&process_quarantine).and_then(|store| {
+                                    store.quarantine_file(
+                                        executable,
+                                        "malware detected from process telemetry",
+                                    )
+                                })
+                            {
+                                error!(
+                                    pid = event.process.pid,
+                                    path = %executable.display(),
+                                    error = %err,
+                                    "failed to quarantine malicious process image"
+                                );
+                            }
+                        }
                     }
+                    Ok(_) => {}
                     Err(err) => {
                         warn!(
                             pid = event.process.pid,
                             path = %executable.display(),
                             error = %err,
-                            "could not terminate confirmed malicious process"
+                            "process image scan failed"
                         );
                     }
                 }
-
-                if process_auto_quarantine {
-                    if let Err(err) = QuarantineStore::open(&process_quarantine).and_then(|store| {
-                        store.quarantine_file(executable, "malware detected from process telemetry")
-                    }) {
-                        error!(
-                            pid = event.process.pid,
-                            path = %executable.display(),
-                            error = %err,
-                            "failed to quarantine malicious process image"
-                        );
-                    }
-                }
-            }
-            Ok(_) => {}
-            Err(err) => {
-                warn!(
-                    pid = event.process.pid,
-                    path = %executable.display(),
-                    error = %err,
-                    "process image scan failed"
-                );
-            }
-        }
-        }))
+            },
+        ))
     } else {
         None
     };
 
     let registry_behavior = Arc::clone(&behavior);
     let registry_telemetry = if config.enable_registry_telemetry {
-        Some(RegistryTelemetry::start(Duration::from_secs(2), move |event| {
-        if matches!(
-            event.kind,
-            RegistryEventKind::Added | RegistryEventKind::Modified
-        ) {
-            warn!(
-                key = %event.key,
-                name = %event.name,
-                value = ?event.value,
-                "persistence registry value changed"
-            );
-
-            if let Ok(mut engine) = registry_behavior.lock() {
-                let assessment = engine.observe(BehaviorSignal {
-                    pid: 0,
-                    kind: BehaviorSignalKind::PersistenceChange,
-                    weight: 45,
-                    details: format!(
-                        "{}\\{} = {}",
-                        event.key,
-                        event.name,
-                        event.value.as_deref().unwrap_or_default()
-                    ),
-                });
-
-                if assessment.level != ThreatLevel::Clean {
+        Some(RegistryTelemetry::start(
+            Duration::from_secs(2),
+            move |event| {
+                if matches!(
+                    event.kind,
+                    RegistryEventKind::Added | RegistryEventKind::Modified
+                ) {
                     warn!(
-                        score = assessment.score,
-                        level = ?assessment.level,
-                        "registry persistence behavior raised system risk"
+                        key = %event.key,
+                        name = %event.name,
+                        value = ?event.value,
+                        "persistence registry value changed"
                     );
+
+                    if let Ok(mut engine) = registry_behavior.lock() {
+                        let assessment = engine.observe(BehaviorSignal {
+                            pid: 0,
+                            kind: BehaviorSignalKind::PersistenceChange,
+                            weight: 45,
+                            details: format!(
+                                "{}\\{} = {}",
+                                event.key,
+                                event.name,
+                                event.value.as_deref().unwrap_or_default()
+                            ),
+                        });
+
+                        if assessment.level != ThreatLevel::Clean {
+                            warn!(
+                                score = assessment.score,
+                                level = ?assessment.level,
+                                "registry persistence behavior raised system risk"
+                            );
+                        }
+                    }
                 }
-            }
-        }
-        }))
+            },
+        ))
     } else {
         None
     };
@@ -740,25 +746,25 @@ fn run_service() -> Result<()> {
         thread::Builder::new()
             .name("bdfr-sentinel-definition-updater".to_string())
             .spawn(move || {
-            let interval = Duration::from_secs(
-                update_config
-                    .definition_update_interval_minutes
-                    .max(1)
-                    .saturating_mul(60),
-            );
+                let interval = Duration::from_secs(
+                    update_config
+                        .definition_update_interval_minutes
+                        .max(1)
+                        .saturating_mul(60),
+                );
 
-            while !update_stop_worker.load(Ordering::Relaxed) {
-                if let Err(err) = try_activate_definition_update(&update_config) {
-                    warn!(error = %err, "definition update check failed");
-                }
+                while !update_stop_worker.load(Ordering::Relaxed) {
+                    if let Err(err) = try_activate_definition_update(&update_config) {
+                        warn!(error = %err, "definition update check failed");
+                    }
 
-                let mut slept = Duration::ZERO;
-                while slept < interval && !update_stop_worker.load(Ordering::Relaxed) {
-                    let slice = Duration::from_secs(1).min(interval - slept);
-                    thread::sleep(slice);
-                    slept += slice;
+                    let mut slept = Duration::ZERO;
+                    while slept < interval && !update_stop_worker.load(Ordering::Relaxed) {
+                        let slice = Duration::from_secs(1).min(interval - slept);
+                        thread::sleep(slice);
+                        slept += slice;
+                    }
                 }
-            }
             })
             .ok()
     } else {
@@ -1070,7 +1076,6 @@ fn load_config() -> Result<ServiceConfig> {
     let bytes = fs::read(&path).with_context(|| format!("failed to read {}", path.display()))?;
     Ok(serde_json::from_slice(&bytes)?)
 }
-
 
 fn save_config(config: &ServiceConfig) -> Result<()> {
     let path = config_path();

@@ -465,10 +465,7 @@ impl SentinelApp {
         ];
 
         let escaped_exe = exe.display().to_string().replace('\'', "''");
-        let mut argument_literals = vec![
-            "'config'".to_string(),
-            "'apply-restart'".to_string(),
-        ];
+        let mut argument_literals = vec!["'config'".to_string(), "'apply-restart'".to_string()];
         argument_literals.extend(
             assignments
                 .iter()
