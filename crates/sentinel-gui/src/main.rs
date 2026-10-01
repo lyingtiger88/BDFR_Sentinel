@@ -307,7 +307,7 @@ impl SentinelApp {
             return;
         }
 
-        let escaped = exe.display().to_string().replace(''', "''");
+        let escaped = exe.display().to_string().replace('\'', "''");
         let script = format!(
             "Start-Process -FilePath '{}' -ArgumentList '{}' -Verb RunAs -Wait",
             escaped, command
