@@ -44,6 +44,12 @@ jobs:
           & $service install
           if ($LASTEXITCODE -ne 0) { throw "Service install failed" }
 
+          $failurePolicy = (sc.exe qfailure BDFRSentinel | Out-String)
+          if ($failurePolicy -notmatch "RESTART") {
+            & $service uninstall 2>$null
+            throw "Service recovery policy was not configured"
+          }
+
           & $service start
           if ($LASTEXITCODE -ne 0) { throw "Service start request failed" }
 
