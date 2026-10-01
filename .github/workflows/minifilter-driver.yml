@@ -36,6 +36,10 @@ jobs:
           $lib = Join-Path $kits "Lib\$($inc.Name)\km\x64"
           if (-not (Test-Path (Join-Path $lib "FltMgr.lib"))) { throw "FltMgr.lib not found in $lib" }
 
+          $ntdef = Get-ChildItem (Join-Path $kits "Include\$($inc.Name)") -Recurse -Filter ntdef.h | Select-Object -First 1
+          if (-not $ntdef) { throw "ntdef.h not found in WDK include tree" }
+          $ntdefInclude = $ntdef.Directory.FullName
+
           $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
           $vs = & $vswhere -latest -products * -property installationPath
           if (-not $vs) { throw "Visual Studio not found" }
@@ -52,6 +56,7 @@ jobs:
           "shared=$($inc.FullName)\shared" >> $env:GITHUB_OUTPUT
           "lib=$lib" >> $env:GITHUB_OUTPUT
           "msvcinclude=$msvcInclude" >> $env:GITHUB_OUTPUT
+          "ntdefinclude=$ntdefInclude" >> $env:GITHUB_OUTPUT
           "cl=$($cl.FullName)" >> $env:GITHUB_OUTPUT
           "link=$link" >> $env:GITHUB_OUTPUT
 
@@ -59,7 +64,7 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force drivers\minifilter\bin\Release | Out-Null
-          & '${{ steps.tools.outputs.cl }}' /nologo /c /TC /kernel /Oi /GS- /Zl /W4 /WX- /D_AMD64_ /DAMD64 /D_WIN64 /DWIN64 /I'${{ steps.tools.outputs.km }}' /I'${{ steps.tools.outputs.shared }}' /I'${{ steps.tools.outputs.msvcinclude }}' /Fo:drivers\minifilter\bin\Release\BDFRSentinelFilter.obj drivers\minifilter\BDFRSentinelFilter.c
+          & '${{ steps.tools.outputs.cl }}' /nologo /c /TC /kernel /Oi /GS- /Zl /W4 /WX- /D_AMD64_ /DAMD64 /D_WIN64 /DWIN64 /I'${{ steps.tools.outputs.km }}' /I'${{ steps.tools.outputs.shared }}' /I'${{ steps.tools.outputs.ntdefinclude }}' /I'${{ steps.tools.outputs.msvcinclude }}' /Fo:drivers\minifilter\bin\Release\BDFRSentinelFilter.obj drivers\minifilter\BDFRSentinelFilter.c
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Link x64 minifilter
