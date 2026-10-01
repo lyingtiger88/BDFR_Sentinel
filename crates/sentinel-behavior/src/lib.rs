@@ -156,7 +156,10 @@ pub fn process_start_signals(
                 pid,
                 kind: BehaviorSignalKind::TempExecutable,
                 weight: 20,
-                details: format!("process image launched from temporary directory: {}", path.display()),
+                details: format!(
+                    "process image launched from temporary directory: {}",
+                    path.display()
+                ),
             });
         }
     }
