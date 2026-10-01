@@ -15,6 +15,7 @@ members = [
     "crates/sentinel-behavior",
     "crates/sentinel-amsi",
     "crates/sentinel-memory",
+    "crates/sentinel-minifilter-client",
 ]
 
 [workspace.package]
