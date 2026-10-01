@@ -68,7 +68,9 @@ impl ServiceConfig {
             hsb_path: Some(program_data.join("Definitions").join("main.hsb")),
             quarantine_dir: program_data.join("Quarantine"),
             definition_update_public_key: Some(
-                program_data.join("Definitions").join("update-public-key.bin"),
+                program_data
+                    .join("Definitions")
+                    .join("update-public-key.bin"),
             ),
             definition_update_interval_minutes: 30,
         }
