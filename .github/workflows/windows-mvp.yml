@@ -32,6 +32,11 @@ jobs:
       - name: CLI smoke test
         run: target\release\bdfr-sentinel.exe status
 
+      - name: Protection engine self-test
+        shell: pwsh
+        run: |
+          target\release\bdfr-sentinel-service.exe self-test
+
       - name: Protection service lifecycle smoke test
         shell: pwsh
         run: |
