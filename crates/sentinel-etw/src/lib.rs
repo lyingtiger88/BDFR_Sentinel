@@ -56,9 +56,7 @@ mod windows_impl {
                     let parent_process_id = parser
                         .try_parse::<u32>("ParentProcessID")
                         .unwrap_or_default();
-                    let image_name = parser
-                        .try_parse::<String>("ImageName")
-                        .unwrap_or_default();
+                    let image_name = parser.try_parse::<String>("ImageName").unwrap_or_default();
 
                     callback(EtwProcessEvent {
                         process_id,
