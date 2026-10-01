@@ -979,6 +979,22 @@ fn parse_config_bool(value: &str) -> Result<bool> {
     }
 }
 
+fn apply_config_setting(config: &mut ServiceConfig, key: &str, enabled: bool) -> Result<()> {
+    match key {
+        "realtime_file_monitor" => config.enable_realtime_file_monitor = enabled,
+        "process_telemetry" => config.enable_process_telemetry = enabled,
+        "registry_telemetry" => config.enable_registry_telemetry = enabled,
+        "memory_telemetry" => config.enable_memory_telemetry = enabled,
+        "amsi" => config.enable_amsi = enabled,
+        "etw" => config.enable_etw = enabled,
+        "minifilter" => config.enable_minifilter = enabled,
+        "definition_updates" => config.enable_definition_updates = enabled,
+        "auto_quarantine" => config.auto_quarantine = enabled,
+        _ => anyhow::bail!("unknown protection setting: {key}"),
+    }
+    Ok(())
+}
+
 fn config_command(args: Vec<String>) -> Result<()> {
     ensure_config_exists()?;
 
@@ -997,26 +1013,28 @@ fn config_command(args: Vec<String>) -> Result<()> {
         [command, key, value] if command == "set" => {
             let enabled = parse_config_bool(value)?;
             let mut config = load_config()?;
-
-            match key.as_str() {
-                "realtime_file_monitor" => config.enable_realtime_file_monitor = enabled,
-                "process_telemetry" => config.enable_process_telemetry = enabled,
-                "registry_telemetry" => config.enable_registry_telemetry = enabled,
-                "memory_telemetry" => config.enable_memory_telemetry = enabled,
-                "amsi" => config.enable_amsi = enabled,
-                "etw" => config.enable_etw = enabled,
-                "minifilter" => config.enable_minifilter = enabled,
-                "definition_updates" => config.enable_definition_updates = enabled,
-                "auto_quarantine" => config.auto_quarantine = enabled,
-                _ => anyhow::bail!("unknown protection setting: {key}"),
-            }
-
+            apply_config_setting(&mut config, key, enabled)?;
             save_config(&config)?;
             println!("Updated {key}={enabled}. Restart the protection service to apply.");
             Ok(())
         }
+        [command, settings @ ..] if command == "apply" && !settings.is_empty() => {
+            let mut config = load_config()?;
+
+            for item in settings {
+                let Some((key, value)) = item.split_once('=') else {
+                    anyhow::bail!("invalid setting assignment: {item}");
+                };
+                let enabled = parse_config_bool(value)?;
+                apply_config_setting(&mut config, key, enabled)?;
+            }
+
+            save_config(&config)?;
+            println!("Protection configuration updated. Restart the service to apply.");
+            Ok(())
+        }
         _ => anyhow::bail!(
-            "usage: bdfr-sentinel-service config show | reset | set <setting> <true|false>"
+            "usage: bdfr-sentinel-service config show | reset | set <setting> <true|false> | apply <setting=true>..."
         ),
     }
 }
