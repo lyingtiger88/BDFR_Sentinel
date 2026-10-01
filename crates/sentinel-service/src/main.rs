@@ -589,6 +589,31 @@ fn run_service() -> Result<()> {
                     "malicious process image detected"
                 );
 
+                match terminate_process_for_malware(event.process.pid) {
+                    Ok(()) => {
+                        record_threat_event(
+                            "process",
+                            "terminate",
+                            executable,
+                            format!("pid={}", event.process.pid),
+                        );
+                        warn!(
+                            pid = event.process.pid,
+                            path = %executable.display(),
+                            "terminated confirmed malicious process"
+                        );
+                        thread::sleep(Duration::from_millis(150));
+                    }
+                    Err(err) => {
+                        warn!(
+                            pid = event.process.pid,
+                            path = %executable.display(),
+                            error = %err,
+                            "could not terminate confirmed malicious process"
+                        );
+                    }
+                }
+
                 if process_auto_quarantine {
                     if let Err(err) = QuarantineStore::open(&process_quarantine).and_then(|store| {
                         store.quarantine_file(executable, "malware detected from process telemetry")
@@ -879,6 +904,41 @@ fn build_scanner(hdb_path: Option<&Path>, hsb_path: Option<&Path>) -> Result<Fil
     }
 
     Ok(FileScanner::new(ScannerConfig::default(), registry))
+}
+
+#[cfg(windows)]
+fn terminate_process_for_malware(pid: u32) -> Result<()> {
+    use std::ffi::c_void;
+
+    const PROCESS_TERMINATE: u32 = 0x0001;
+
+    #[link(name = "kernel32")]
+    extern "system" {
+        fn OpenProcess(desired_access: u32, inherit_handle: i32, process_id: u32) -> *mut c_void;
+        fn TerminateProcess(process: *mut c_void, exit_code: u32) -> i32;
+        fn CloseHandle(handle: *mut c_void) -> i32;
+    }
+
+    let handle = unsafe { OpenProcess(PROCESS_TERMINATE, 0, pid) };
+    if handle.is_null() {
+        anyhow::bail!("failed to open process {pid} for termination");
+    }
+
+    let terminated = unsafe { TerminateProcess(handle, 0xDEAD) };
+    unsafe {
+        CloseHandle(handle);
+    }
+
+    if terminated == 0 {
+        anyhow::bail!("TerminateProcess failed for pid {pid}");
+    }
+
+    Ok(())
+}
+
+#[cfg(not(windows))]
+fn terminate_process_for_malware(_pid: u32) -> Result<()> {
+    anyhow::bail!("process termination is only available on Windows")
 }
 
 fn threat_events_path() -> PathBuf {
