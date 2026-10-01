@@ -386,10 +386,10 @@ fn run_service() -> Result<()> {
             .and_then(|names| names.get(&event.parent_process_id).cloned());
 
         if let Ok(mut names) = etw_names_for_callback.lock() {
-            names.insert(event.process_id, event.image_name.clone());
-            if names.len() > 8192 {
-                names.retain(|_, _| true);
+            if names.len() >= 8192 {
+                names.clear();
             }
+            names.insert(event.process_id, event.image_name.clone());
         }
 
         let signals = process_start_signals(
