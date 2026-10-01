@@ -273,10 +273,7 @@ fn run_service() -> Result<()> {
 
                 if process_auto_quarantine {
                     if let Err(err) = QuarantineStore::open(&process_quarantine).and_then(|store| {
-                        store.quarantine_file(
-                            executable,
-                            "malware detected from process telemetry",
-                        )
+                        store.quarantine_file(executable, "malware detected from process telemetry")
                     }) {
                         error!(
                             pid = event.process.pid,
