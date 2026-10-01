@@ -24,4 +24,5 @@ sentinel-quarantine = { path = "../sentinel-quarantine" }
 sentinel-realtime = { path = "../sentinel-realtime" }
 sentinel-telemetry = { path = "../sentinel-telemetry" }
 sentinel-memory = { path = "../sentinel-memory" }
+sentinel-etw = { path = "../sentinel-etw" }
 sentinel-minifilter-client = { path = "../sentinel-minifilter-client" }
