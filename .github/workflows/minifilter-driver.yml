@@ -1,0 +1,55 @@
+name: Minifilter Driver
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["main"]
+    paths:
+      - "drivers/minifilter/**"
+      - ".github/workflows/minifilter-driver.yml"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-driver:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install current Windows Driver Kit
+        shell: pwsh
+        run: |
+          winget install --id Microsoft.WindowsWDK.10.0.28000 --exact --silent --accept-package-agreements --accept-source-agreements
+
+      - name: Locate MSBuild
+        id: msbuild
+        shell: pwsh
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $path = & $vswhere -latest -products * -requires Microsoft.Component.MSBuild -find MSBuild\**\Bin\MSBuild.exe | Select-Object -First 1
+          if (-not $path) { throw "MSBuild not found" }
+          "path=$path" >> $env:GITHUB_OUTPUT
+
+      - name: Build x64 Release minifilter
+        shell: pwsh
+        run: |
+          & '${{ steps.msbuild.outputs.path }}' drivers\minifilter\BDFRSentinelFilter.vcxproj /m /p:Configuration=Release /p:Platform=x64
+
+      - name: Collect driver package
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force driver-dist | Out-Null
+          $sys = Get-ChildItem drivers\minifilter -Recurse -Filter BDFRSentinelFilter.sys | Select-Object -First 1
+          if (-not $sys) { throw "BDFRSentinelFilter.sys not found" }
+          Copy-Item $sys.FullName driver-dist\BDFRSentinelFilter.sys
+          Copy-Item drivers\minifilter\BDFRSentinelFilter.inf driver-dist\BDFRSentinelFilter.inf
+          Copy-Item drivers\minifilter\README.md driver-dist\README.md
+          Compress-Archive driver-dist\* BDFR-Sentinel-Minifilter-x64-UNSIGNED.zip -Force
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: BDFR-Sentinel-Minifilter-x64-UNSIGNED
+          path: BDFR-Sentinel-Minifilter-x64-UNSIGNED.zip
+          if-no-files-found: error
