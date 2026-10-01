@@ -472,7 +472,7 @@ impl SentinelApp {
         argument_literals.extend(
             assignments
                 .iter()
-                .map(|value| format!("'{}'", value.replace(''', "''"))),
+                .map(|value| format!("'{}'", value.replace('\'', "''"))),
         );
 
         let script = format!(
