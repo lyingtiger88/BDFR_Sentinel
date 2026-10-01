@@ -1,13 +1,17 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use anyhow::{Context, Result};
-use sentinel_behavior::{process_start_signals, BehaviorEngine, BehaviorSignal, BehaviorSignalKind};
+use sentinel_behavior::{
+    process_start_signals, BehaviorEngine, BehaviorSignal, BehaviorSignalKind,
+};
 use sentinel_core::{EngineRegistry, FileScanner, ScannerConfig, ThreatLevel};
 use sentinel_definitions::{ClamHashDatabase, HashDefinitionEngine};
 use sentinel_pe::PeAnalyzerEngine;
 use sentinel_quarantine::QuarantineStore;
 use sentinel_realtime::{RealtimeConfig, RealtimeMonitor};
-use sentinel_telemetry::{ProcessEventKind, ProcessTelemetry, RegistryEventKind, RegistryTelemetry};
+use sentinel_telemetry::{
+    ProcessEventKind, ProcessTelemetry, RegistryEventKind, RegistryTelemetry,
+};
 use serde::{Deserialize, Serialize};
 use std::ffi::OsString;
 use std::fs;
@@ -322,7 +326,10 @@ fn run_service() -> Result<()> {
 
     let registry_behavior = Arc::clone(&behavior);
     let registry_telemetry = RegistryTelemetry::start(Duration::from_secs(2), move |event| {
-        if matches!(event.kind, RegistryEventKind::Added | RegistryEventKind::Modified) {
+        if matches!(
+            event.kind,
+            RegistryEventKind::Added | RegistryEventKind::Modified
+        ) {
             warn!(
                 key = %event.key,
                 name = %event.name,
