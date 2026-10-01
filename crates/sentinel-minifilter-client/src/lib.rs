@@ -54,12 +54,8 @@ mod windows_impl {
         *mut *mut c_void,
     ) -> i32;
 
-    type FilterGetMessageFn = unsafe extern "system" fn(
-        *mut c_void,
-        *mut FilterMessageHeader,
-        u32,
-        *mut c_void,
-    ) -> i32;
+    type FilterGetMessageFn =
+        unsafe extern "system" fn(*mut c_void, *mut FilterMessageHeader, u32, *mut c_void) -> i32;
 
     type FilterReplyMessageFn =
         unsafe extern "system" fn(*mut c_void, *const FilterReplyHeader, u32) -> i32;
@@ -130,9 +126,7 @@ mod windows_impl {
 
             let connect: FilterConnectCommunicationPortFn = unsafe {
                 *library
-                    .get::<FilterConnectCommunicationPortFn>(
-                        b"FilterConnectCommunicationPort\0",
-                    )
+                    .get::<FilterConnectCommunicationPortFn>(b"FilterConnectCommunicationPort\0")
                     .map_err(|err| MinifilterClientError::Symbol(err.to_string()))?
             };
 
