@@ -46,6 +46,8 @@ struct ServiceConfig {
     hdb_path: Option<PathBuf>,
     hsb_path: Option<PathBuf>,
     quarantine_dir: PathBuf,
+    definition_update_public_key: Option<PathBuf>,
+    definition_update_interval_minutes: u64,
 }
 
 impl ServiceConfig {
@@ -65,6 +67,10 @@ impl ServiceConfig {
             hdb_path: Some(program_data.join("Definitions").join("main.hdb")),
             hsb_path: Some(program_data.join("Definitions").join("main.hsb")),
             quarantine_dir: program_data.join("Quarantine"),
+            definition_update_public_key: Some(
+                program_data.join("Definitions").join("update-public-key.bin"),
+            ),
+            definition_update_interval_minutes: 30,
         }
     }
 }
@@ -548,6 +554,34 @@ fn run_service() -> Result<()> {
         }
     });
 
+    let update_stop = Arc::new(AtomicBool::new(false));
+    let update_stop_worker = Arc::clone(&update_stop);
+    let update_config = config.clone();
+    let update_thread = thread::Builder::new()
+        .name("bdfr-sentinel-definition-updater".to_string())
+        .spawn(move || {
+            let interval = Duration::from_secs(
+                update_config
+                    .definition_update_interval_minutes
+                    .max(1)
+                    .saturating_mul(60),
+            );
+
+            while !update_stop_worker.load(Ordering::Relaxed) {
+                if let Err(err) = try_activate_definition_update(&update_config) {
+                    warn!(error = %err, "definition update check failed");
+                }
+
+                let mut slept = Duration::ZERO;
+                while slept < interval && !update_stop_worker.load(Ordering::Relaxed) {
+                    let slice = Duration::from_secs(1).min(interval - slept);
+                    thread::sleep(slice);
+                    slept += slice;
+                }
+            }
+        })
+        .ok();
+
     let amsi_active = amsi
         .lock()
         .map(|scanner| scanner.is_some())
@@ -578,6 +612,11 @@ fn run_service() -> Result<()> {
 
     while !stopped.load(Ordering::Relaxed) {
         thread::sleep(Duration::from_millis(250));
+    }
+
+    update_stop.store(true, Ordering::Relaxed);
+    if let Some(handle) = update_thread {
+        let _ = handle.join();
     }
 
     if let Some(broker) = minifilter_broker.as_mut() {
@@ -642,6 +681,51 @@ fn run_protection_loop() -> Result<()> {
     loop {
         thread::sleep(Duration::from_secs(1));
     }
+}
+
+fn try_activate_definition_update(config: &ServiceConfig) -> Result<()> {
+    let definitions_dir = program_data_dir().join("Definitions");
+    let staging_dir = definitions_dir.join("staging");
+    let manifest_path = staging_dir.join("manifest.json");
+
+    if !manifest_path.is_file() {
+        return Ok(());
+    }
+
+    let Some(public_key_path) = config.definition_update_public_key.as_deref() else {
+        return Ok(());
+    };
+
+    if !public_key_path.is_file() {
+        anyhow::bail!(
+            "definition update public key not found: {}",
+            public_key_path.display()
+        );
+    }
+
+    let manifest_bytes = fs::read(&manifest_path)?;
+    let manifest: UpdateManifest = serde_json::from_slice(&manifest_bytes)?;
+    let public_key = fs::read(public_key_path)?;
+    let verifier = UpdateVerifier::from_public_key_bytes(&public_key)
+        .context("invalid definition update public key")?;
+    verifier
+        .verify_manifest(&manifest)
+        .context("definition manifest signature verification failed")?;
+
+    let live_dir = definitions_dir.join("active");
+    let backup_dir = definitions_dir.join("backup");
+    let updater = StagingUpdater {
+        staging_dir: staging_dir.clone(),
+        live_dir,
+        backup_dir,
+    };
+
+    updater
+        .activate_verified(&manifest)
+        .context("failed to activate verified definition update")?;
+
+    info!(version = %manifest.version, "activated signed definition update");
+    Ok(())
 }
 
 fn is_script_path(path: &Path) -> bool {
