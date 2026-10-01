@@ -16,6 +16,7 @@ use sentinel_telemetry::{
 };
 use sentinel_updater::{StagingUpdater, UpdateManifest, UpdateVerifier};
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::ffi::OsString;
 use std::fs;
@@ -136,6 +137,16 @@ struct StatusSnapshot {
     minifilter_connected: bool,
 }
 
+#[derive(Debug, Serialize)]
+struct SelfTestReport {
+    hash_detection: bool,
+    realtime_detection: bool,
+    quarantine_round_trip: bool,
+    amsi_available: bool,
+    memory_inspection_available: bool,
+    passed: bool,
+}
+
 fn main() -> Result<()> {
     init_logging();
 
@@ -147,6 +158,7 @@ fn main() -> Result<()> {
         Some("stop") => stop_service(),
         Some("status") => print_status(),
         Some("diagnostics") => print_diagnostics(),
+        Some("self-test") => run_self_test(),
         Some("config") => config_command(args.collect()),
         Some("console") => run_protection_loop(),
         Some(other) => anyhow::bail!("unknown command: {other}"),
@@ -304,6 +316,111 @@ fn print_diagnostics() -> Result<()> {
     };
 
     println!("{}", serde_json::to_string_pretty(&diagnostics)?);
+    Ok(())
+}
+
+fn run_self_test() -> Result<()> {
+    let marker = b"BDFR_SENTINEL_SELF_TEST_MARKER_v1";
+    let hash = {
+        let mut hasher = Sha256::new();
+        hasher.update(marker);
+        format!("{:x}", hasher.finalize())
+    };
+
+    let hsb = format!("{hash}:{}:Trojan.BDFR.SelfTest", marker.len());
+    let db = ClamHashDatabase::parse_hsb(&hsb)?;
+    let hashes = HashDefinitionEngine::new().with_hsb(db);
+
+    let mut registry = EngineRegistry::new();
+    registry.register(PeAnalyzerEngine);
+    registry.register(hashes);
+    let scanner = Arc::new(FileScanner::new(ScannerConfig::default(), registry));
+
+    let root = std::env::temp_dir().join(format!(
+        "bdfr-sentinel-self-test-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|duration| duration.as_nanos())
+            .unwrap_or_default()
+    ));
+    let watched = root.join("watched");
+    let quarantine_dir = root.join("quarantine");
+    fs::create_dir_all(&watched)?;
+
+    let sample = watched.join("self-test.exe");
+    fs::write(&sample, marker)?;
+
+    let hash_detection = scanner
+        .scan_file(&sample)
+        .map(|report| report.verdict.level == ThreatLevel::Malicious)
+        .unwrap_or(false);
+
+    let (tx, rx) = std::sync::mpsc::channel();
+    let mut realtime = RealtimeMonitor::new(
+        RealtimeConfig {
+            paths: vec![watched.clone()],
+            recursive: true,
+            debounce: Duration::from_millis(50),
+            ..RealtimeConfig::default()
+        },
+        Arc::clone(&scanner),
+    )?;
+
+    realtime.start(move |event| {
+        if let Some(report) = event.report {
+            let _ = tx.send(report.verdict.level);
+        }
+    })?;
+
+    let realtime_sample = watched.join("realtime-self-test.exe");
+    fs::write(&realtime_sample, marker)?;
+
+    let realtime_detection = rx
+        .recv_timeout(Duration::from_secs(5))
+        .map(|level| level == ThreatLevel::Malicious)
+        .unwrap_or(false);
+
+    realtime.stop();
+
+    let quarantine_round_trip = (|| -> Result<bool> {
+        let store = QuarantineStore::open(&quarantine_dir)?;
+        let entry = store.quarantine_file(&sample, "BDFR Sentinel self-test")?;
+        if sample.exists() {
+            return Ok(false);
+        }
+
+        let restored = store.restore(entry.id)?;
+        Ok(restored.original_path == sample && fs::read(&sample)? == marker)
+    })()
+    .unwrap_or(false);
+
+    let amsi_available = AmsiScanner::new().is_ok();
+    let memory_inspection_available =
+        executable_writable_regions(std::process::id()).is_ok();
+
+    let passed = hash_detection
+        && realtime_detection
+        && quarantine_round_trip
+        && amsi_available
+        && memory_inspection_available;
+
+    let report = SelfTestReport {
+        hash_detection,
+        realtime_detection,
+        quarantine_round_trip,
+        amsi_available,
+        memory_inspection_available,
+        passed,
+    };
+
+    println!("{}", serde_json::to_string_pretty(&report)?);
+    let _ = fs::remove_dir_all(&root);
+
+    if !passed {
+        anyhow::bail!("BDFR Sentinel protection self-test failed");
+    }
+
     Ok(())
 }
 
