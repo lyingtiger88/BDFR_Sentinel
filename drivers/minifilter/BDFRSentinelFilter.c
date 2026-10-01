@@ -94,7 +94,7 @@ DriverEntry(
         return status;
     }
 
-    RtlInitUnicodeString(&portName, L"\BDFRSentinelPort");
+    RtlInitUnicodeString(&portName, L"\\BDFRSentinelPort");
 
     InitializeObjectAttributes(
         &objectAttributes,
