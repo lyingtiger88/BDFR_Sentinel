@@ -1,13 +1,13 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use anyhow::{Context, Result};
-use sentinel_behavior::{process_start_signals, BehaviorEngine};
+use sentinel_behavior::{process_start_signals, BehaviorEngine, BehaviorSignal, BehaviorSignalKind};
 use sentinel_core::{EngineRegistry, FileScanner, ScannerConfig, ThreatLevel};
 use sentinel_definitions::{ClamHashDatabase, HashDefinitionEngine};
 use sentinel_pe::PeAnalyzerEngine;
 use sentinel_quarantine::QuarantineStore;
 use sentinel_realtime::{RealtimeConfig, RealtimeMonitor};
-use sentinel_telemetry::{ProcessEventKind, ProcessTelemetry};
+use sentinel_telemetry::{ProcessEventKind, ProcessTelemetry, RegistryEventKind, RegistryTelemetry};
 use serde::{Deserialize, Serialize};
 use std::ffi::OsString;
 use std::fs;
@@ -320,6 +320,40 @@ fn run_service() -> Result<()> {
         }
     });
 
+    let registry_behavior = Arc::clone(&behavior);
+    let registry_telemetry = RegistryTelemetry::start(Duration::from_secs(2), move |event| {
+        if matches!(event.kind, RegistryEventKind::Added | RegistryEventKind::Modified) {
+            warn!(
+                key = %event.key,
+                name = %event.name,
+                value = ?event.value,
+                "persistence registry value changed"
+            );
+
+            if let Ok(mut engine) = registry_behavior.lock() {
+                let assessment = engine.observe(BehaviorSignal {
+                    pid: 0,
+                    kind: BehaviorSignalKind::PersistenceChange,
+                    weight: 45,
+                    details: format!(
+                        "{}\\{} = {}",
+                        event.key,
+                        event.name,
+                        event.value.as_deref().unwrap_or_default()
+                    ),
+                });
+
+                if assessment.level != ThreatLevel::Clean {
+                    warn!(
+                        score = assessment.score,
+                        level = ?assessment.level,
+                        "registry persistence behavior raised system risk"
+                    );
+                }
+            }
+        }
+    });
+
     write_status_snapshot(&config, "running");
 
     status_handle.set_service_status(ServiceStatus {
@@ -338,6 +372,7 @@ fn run_service() -> Result<()> {
         thread::sleep(Duration::from_millis(250));
     }
 
+    registry_telemetry.stop();
     process_telemetry.stop();
     monitor.stop();
     write_status_snapshot(&config, "stopped");
