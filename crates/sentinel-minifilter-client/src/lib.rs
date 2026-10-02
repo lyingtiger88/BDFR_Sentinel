@@ -314,6 +314,8 @@ mod windows_impl {
         value.encode_utf16().chain(std::iter::once(0)).collect()
     }
 
+    pub use MinifilterBroker as PlatformBroker;
+
     #[cfg(test)]
     mod protocol_layout_tests {
         use super::*;
@@ -336,7 +338,6 @@ mod windows_impl {
         }
     }
 
-    pub use MinifilterBroker as PlatformBroker;
 }
 
 #[cfg(windows)]
