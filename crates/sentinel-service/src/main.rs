@@ -649,6 +649,12 @@ fn run_service() -> Result<()> {
 
     let mut minifilter_broker = if config.enable_minifilter {
         match MinifilterBroker::start(move |request| {
+            if request.path.starts_with(&policy_quarantine)
+                || !is_preexecution_candidate(&request.path)
+            {
+                return MinifilterDecision::Allow;
+            }
+
             match policy_scanner.scan_file(&request.path) {
                 Ok(report) if report.verdict.level == ThreatLevel::Malicious => {
                     record_threat_event(
@@ -739,7 +745,7 @@ fn run_service() -> Result<()> {
                 &[],
             );
 
-            if etw_memory_enabled {
+            if etw_memory_enabled && should_inspect_process_memory(executable.as_deref(), &signals) {
                 if let Ok(regions) = executable_writable_regions(event.process_id) {
                     for region in regions.into_iter().take(4) {
                         signals.push(BehaviorSignal {
@@ -842,7 +848,9 @@ fn run_service() -> Result<()> {
                     &event.process.command_line,
                 );
 
-                if memory_telemetry_enabled {
+                if memory_telemetry_enabled
+                    && should_inspect_process_memory(event.process.executable.as_deref(), &signals)
+                {
                     if let Ok(regions) = executable_writable_regions(event.process.pid) {
                         for region in regions.into_iter().take(4) {
                             signals.push(BehaviorSignal {
@@ -1318,6 +1326,44 @@ fn terminate_process_for_malware(pid: u32) -> Result<()> {
 #[cfg(not(windows))]
 fn terminate_process_for_malware(_pid: u32) -> Result<()> {
     anyhow::bail!("process termination is only available on Windows")
+}
+
+fn is_preexecution_candidate(path: &Path) -> bool {
+    matches!(
+        path.extension()
+            .and_then(|ext| ext.to_str())
+            .map(|ext| ext.to_ascii_lowercase())
+            .as_deref(),
+        Some(
+            "exe"
+                | "dll"
+                | "sys"
+                | "scr"
+                | "com"
+                | "msi"
+                | "ps1"
+                | "bat"
+                | "cmd"
+                | "js"
+                | "vbs"
+        )
+    )
+}
+
+fn should_inspect_process_memory(
+    executable: Option<&Path>,
+    existing_signals: &[BehaviorSignal],
+) -> bool {
+    if !existing_signals.is_empty() {
+        return true;
+    }
+
+    executable.is_some_and(|path| {
+        let lower = path.to_string_lossy().to_ascii_lowercase();
+        lower.contains(r"\temp\")
+            || lower.contains(r"\appdata\")
+            || lower.contains(r"\downloads\")
+    })
 }
 
 fn threat_events_path() -> PathBuf {
