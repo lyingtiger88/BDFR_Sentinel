@@ -134,7 +134,7 @@ impl RealtimeMonitor {
                 let mut processed_events: usize = 0;
 
                 while !stop.load(Ordering::Relaxed) {
-                    let event = match rx.recv_timeout(std::time::Duration::from_millis(200)) {
+                    let event = match rx.recv_timeout(Duration::from_secs(1)) {
                         Ok(Ok(event)) => event,
                         Ok(Err(err)) => {
                             error!(error = %err, "filesystem watcher error");
