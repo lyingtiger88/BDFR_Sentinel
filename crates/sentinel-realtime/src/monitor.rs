@@ -174,7 +174,7 @@ impl RealtimeMonitor {
                         fingerprints.insert(path.clone(), fingerprint);
 
                         processed_events = processed_events.wrapping_add(1);
-                        if processed_events % 1024 == 0 {
+                        if processed_events.is_multiple_of(1024) {
                             let cutoff = Duration::from_secs(60);
                             last_seen.retain(|_, seen| now.duration_since(*seen) <= cutoff);
                             if fingerprints.len() > 8192 {
