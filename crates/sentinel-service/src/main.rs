@@ -1046,17 +1046,7 @@ fn run_service() -> Result<()> {
         monitor.stop();
     }
     write_status_snapshot(
-        &config,
-        "stopped",
-        false,
-        false,
-        false,
-        false,
-        false,
-        false,
-        false,
-        false,
-        false,
+        &config, "stopped", false, false, false, false, false, false, false, false, false,
     );
 
     status_handle.set_service_status(ServiceStatus {
