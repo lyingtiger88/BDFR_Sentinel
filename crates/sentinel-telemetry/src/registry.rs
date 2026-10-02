@@ -1,8 +1,4 @@
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
-#[cfg(windows)]
-use std::os::windows::process::CommandExt;
-use std::process::Command;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread;
@@ -33,64 +29,53 @@ pub struct RegistryEvent {
 
 pub struct RegistryTelemetry {
     stop: Arc<AtomicBool>,
+    workers: Vec<thread::JoinHandle<()>>,
 }
 
 impl RegistryTelemetry {
-    pub fn start<F>(poll_interval: Duration, on_event: F) -> Self
+    pub fn start<F>(_poll_interval: Duration, on_event: F) -> Self
     where
         F: Fn(RegistryEvent) + Send + Sync + 'static,
     {
         let stop = Arc::new(AtomicBool::new(false));
-        let stop_worker = Arc::clone(&stop);
         let callback = Arc::new(on_event);
+        let mut workers = Vec::new();
 
-        thread::Builder::new()
-            .name("bdfr-sentinel-registry-telemetry".to_string())
-            .spawn(move || {
-                let mut known = snapshot_all();
+        #[cfg(windows)]
+        {
+            for key in WATCH_KEYS {
+                let stop_worker = Arc::clone(&stop);
+                let callback = Arc::clone(&callback);
+                let key = (*key).to_string();
 
-                while !stop_worker.load(Ordering::Relaxed) {
-                    thread::sleep(poll_interval);
-                    let current = snapshot_all();
-
-                    for (identity, value) in &current {
-                        match known.get(identity) {
-                            None => callback(RegistryEvent {
-                                kind: RegistryEventKind::Added,
-                                key: identity.0.clone(),
-                                name: identity.1.clone(),
-                                value: Some(value.clone()),
-                            }),
-                            Some(previous) if previous != value => callback(RegistryEvent {
-                                kind: RegistryEventKind::Modified,
-                                key: identity.0.clone(),
-                                name: identity.1.clone(),
-                                value: Some(value.clone()),
-                            }),
-                            _ => {}
-                        }
-                    }
-
-                    for identity in known.keys() {
-                        if !current.contains_key(identity) {
-                            callback(RegistryEvent {
-                                kind: RegistryEventKind::Removed,
-                                key: identity.0.clone(),
-                                name: identity.1.clone(),
-                                value: None,
-                            });
-                        }
-                    }
-
-                    known = current;
+                match thread::Builder::new()
+                    .name("bdfr-sentinel-registry-notify".to_string())
+                    .spawn(move || watch_registry_key(&key, stop_worker, callback))
+                {
+                    Ok(worker) => workers.push(worker),
+                    Err(err) => warn!(error = %err, key = %key, "failed to start registry notification worker"),
                 }
-            })
-            .unwrap_or_else(|err| {
-                warn!(error = %err, "failed to start registry telemetry worker");
-                panic!("failed to start registry telemetry worker: {err}");
-            });
+            }
+        }
 
-        Self { stop }
+        #[cfg(not(windows))]
+        {
+            let stop_worker = Arc::clone(&stop);
+            match thread::Builder::new()
+                .name("bdfr-sentinel-registry-telemetry".to_string())
+                .spawn(move || {
+                    while !stop_worker.load(Ordering::Relaxed) {
+                        thread::sleep(Duration::from_secs(1));
+                    }
+                    drop(callback);
+                })
+            {
+                Ok(worker) => workers.push(worker),
+                Err(err) => warn!(error = %err, "failed to start registry telemetry worker"),
+            }
+        }
+
+        Self { stop, workers }
     }
 
     pub fn stop(&self) {
@@ -101,65 +86,89 @@ impl RegistryTelemetry {
 impl Drop for RegistryTelemetry {
     fn drop(&mut self) {
         self.stop();
+        while let Some(worker) = self.workers.pop() {
+            let _ = worker.join();
+        }
     }
 }
 
-fn snapshot_all() -> HashMap<(String, String), String> {
-    let mut values = HashMap::new();
-    for key in WATCH_KEYS {
-        if let Ok(entries) = query_values(key) {
-            for (name, value) in entries {
-                values.insert(((*key).to_string(), name), value);
-            }
-        }
-    }
-    values
-}
+#[cfg(windows)]
+fn watch_registry_key<F>(key: &str, stop: Arc<AtomicBool>, callback: Arc<F>)
+where
+    F: Fn(RegistryEvent) + Send + Sync + 'static,
+{
+    use std::ptr;
+    use windows_sys::Win32::Foundation::{
+        CloseHandle, ERROR_SUCCESS, WAIT_OBJECT_0, WAIT_TIMEOUT,
+    };
+    use windows_sys::Win32::System::Registry::{
+        RegCloseKey, RegNotifyChangeKeyValue, RegOpenKeyExW, HKEY, HKEY_LOCAL_MACHINE, KEY_NOTIFY,
+        REG_NOTIFY_CHANGE_LAST_SET, REG_NOTIFY_CHANGE_NAME,
+    };
+    use windows_sys::Win32::System::Threading::{CreateEventW, WaitForSingleObject};
 
-fn query_values(key: &str) -> Result<Vec<(String, String)>, std::io::Error> {
-    let mut command = Command::new("reg.exe");
-    command.args(["query", key]);
+    let Some(subkey) = key.strip_prefix(r"HKLM\") else {
+        return;
+    };
 
-    #[cfg(windows)]
-    {
-        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-        command.creation_flags(CREATE_NO_WINDOW);
-    }
+    let wide: Vec<u16> = subkey.encode_utf16().chain(std::iter::once(0)).collect();
+    let mut handle: HKEY = ptr::null_mut();
 
-    let output = command.output()?;
-    if !output.status.success() {
-        return Ok(Vec::new());
-    }
-
-    let text = String::from_utf8_lossy(&output.stdout);
-    let mut entries = Vec::new();
-
-    for line in text.lines() {
-        let trimmed = line.trim();
-        if trimmed.is_empty() || trimmed.starts_with("HKEY_") || trimmed.starts_with("HKLM") {
-            continue;
-        }
-
-        let parts: Vec<&str> = trimmed.split_whitespace().collect();
-        if parts.len() < 3 {
-            continue;
-        }
-
-        let type_index = parts
-            .iter()
-            .position(|part| part.starts_with("REG_"))
-            .unwrap_or(1);
-
-        if type_index == 0 || type_index + 1 >= parts.len() {
-            continue;
-        }
-
-        let name = parts[..type_index].join(" ");
-        let value = parts[type_index + 1..].join(" ");
-        entries.push((name, value));
+    let open_status = unsafe {
+        RegOpenKeyExW(
+            HKEY_LOCAL_MACHINE,
+            wide.as_ptr(),
+            0,
+            KEY_NOTIFY,
+            &mut handle,
+        )
+    };
+    if open_status != ERROR_SUCCESS || handle.is_null() {
+        warn!(key = %key, status = open_status, "failed to open registry key for notifications");
+        return;
     }
 
-    Ok(entries)
+    let event = unsafe { CreateEventW(ptr::null(), 0, 0, ptr::null()) };
+    if event.is_null() {
+        unsafe {
+            RegCloseKey(handle);
+        }
+        warn!(key = %key, "failed to create registry notification event");
+        return;
+    }
+
+    while !stop.load(Ordering::Relaxed) {
+        let status = unsafe {
+            RegNotifyChangeKeyValue(
+                handle,
+                0,
+                REG_NOTIFY_CHANGE_NAME | REG_NOTIFY_CHANGE_LAST_SET,
+                event,
+                1,
+            )
+        };
+
+        if status != ERROR_SUCCESS {
+            warn!(key = %key, status, "registry notification registration failed");
+            break;
+        }
+
+        match unsafe { WaitForSingleObject(event, 1000) } {
+            WAIT_OBJECT_0 => callback(RegistryEvent {
+                kind: RegistryEventKind::Modified,
+                key: key.to_string(),
+                name: "*".to_string(),
+                value: None,
+            }),
+            WAIT_TIMEOUT => {}
+            _ => break,
+        }
+    }
+
+    unsafe {
+        CloseHandle(event);
+        RegCloseKey(handle);
+    }
 }
 
 #[cfg(test)]
