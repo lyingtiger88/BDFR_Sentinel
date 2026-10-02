@@ -386,9 +386,17 @@ impl SentinelApp {
 
         self.service_state = if !exe.is_file() {
             "Service binary missing".to_string()
-        } else if self.protection_snapshot.protection.eq_ignore_ascii_case("running") {
+        } else if self
+            .protection_snapshot
+            .protection
+            .eq_ignore_ascii_case("running")
+        {
             "Running".to_string()
-        } else if self.protection_snapshot.protection.eq_ignore_ascii_case("stopped") {
+        } else if self
+            .protection_snapshot
+            .protection
+            .eq_ignore_ascii_case("stopped")
+        {
             "Stopped".to_string()
         } else if service_status_path().is_file() {
             "Unknown".to_string()

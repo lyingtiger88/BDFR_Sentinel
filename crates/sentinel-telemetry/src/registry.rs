@@ -53,7 +53,9 @@ impl RegistryTelemetry {
                     .spawn(move || watch_registry_key(&key, stop_worker, callback))
                 {
                     Ok(worker) => workers.push(worker),
-                    Err(err) => warn!(error = %err, key = %key, "failed to start registry notification worker"),
+                    Err(err) => {
+                        warn!(error = %err, key = %key, "failed to start registry notification worker")
+                    }
                 }
             }
         }
@@ -68,8 +70,7 @@ impl RegistryTelemetry {
                         thread::sleep(Duration::from_secs(1));
                     }
                     drop(callback);
-                })
-            {
+                }) {
                 Ok(worker) => workers.push(worker),
                 Err(err) => warn!(error = %err, "failed to start registry telemetry worker"),
             }
@@ -98,9 +99,7 @@ where
     F: Fn(RegistryEvent) + Send + Sync + 'static,
 {
     use std::ptr;
-    use windows_sys::Win32::Foundation::{
-        CloseHandle, ERROR_SUCCESS, WAIT_OBJECT_0, WAIT_TIMEOUT,
-    };
+    use windows_sys::Win32::Foundation::{CloseHandle, ERROR_SUCCESS, WAIT_OBJECT_0, WAIT_TIMEOUT};
     use windows_sys::Win32::System::Registry::{
         RegCloseKey, RegNotifyChangeKeyValue, RegOpenKeyExW, HKEY, HKEY_LOCAL_MACHINE, KEY_NOTIFY,
         REG_NOTIFY_CHANGE_LAST_SET, REG_NOTIFY_CHANGE_NAME,
