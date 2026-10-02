@@ -127,8 +127,10 @@ fn perf_smoke(size_mb: usize, iterations: usize) -> Result<()> {
     let mut registry = EngineRegistry::new();
     registry.register(PeAnalyzerEngine);
 
-    let mut cold_config = ScannerConfig::default();
-    cold_config.cache_capacity = 0;
+    let cold_config = ScannerConfig {
+        cache_capacity: 0,
+        ..ScannerConfig::default()
+    };
     let cold_scanner = FileScanner::new(cold_config, registry);
 
     let cold_start = Instant::now();
