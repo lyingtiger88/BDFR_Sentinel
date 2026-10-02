@@ -190,6 +190,8 @@ struct ScanSummary {
 #[derive(Debug, Clone, Default, Deserialize)]
 struct ProtectionSnapshot {
     #[serde(default)]
+    protection: String,
+    #[serde(default)]
     realtime_file_monitor: bool,
     #[serde(default)]
     process_telemetry: bool,
@@ -377,27 +379,22 @@ impl SentinelApp {
         }
 
         let exe = service_executable_path();
-        self.service_state = if !exe.is_file() {
-            "Service binary missing".to_string()
-        } else {
-            match hidden_command(&exe).arg("status").output() {
-                Ok(output) if output.status.success() => {
-                    let text = String::from_utf8_lossy(&output.stdout).trim().to_string();
-                    if text.is_empty() {
-                        "Unknown".to_string()
-                    } else {
-                        text
-                    }
-                }
-                Ok(_) => "Not installed".to_string(),
-                Err(_) => "Unavailable".to_string(),
-            }
-        };
-
         self.protection_snapshot = fs::read(service_status_path())
             .ok()
             .and_then(|bytes| serde_json::from_slice::<ProtectionSnapshot>(&bytes).ok())
             .unwrap_or_default();
+
+        self.service_state = if !exe.is_file() {
+            "Service binary missing".to_string()
+        } else if self.protection_snapshot.protection.eq_ignore_ascii_case("running") {
+            "Running".to_string()
+        } else if self.protection_snapshot.protection.eq_ignore_ascii_case("stopped") {
+            "Stopped".to_string()
+        } else if service_status_path().is_file() {
+            "Unknown".to_string()
+        } else {
+            "Not installed".to_string()
+        };
 
         self.last_service_refresh = Instant::now();
     }
@@ -435,21 +432,11 @@ impl SentinelApp {
     }
 
     fn load_service_preferences(&mut self) {
-        let exe = service_executable_path();
-        if !exe.is_file() {
-            return;
-        }
-
-        match hidden_command(&exe).args(["config", "show"]).output() {
-            Ok(output) if output.status.success() => {
-                if let Ok(preferences) =
-                    serde_json::from_slice::<ProtectionPreferences>(&output.stdout)
-                {
-                    self.protection_preferences = preferences;
-                    self.protection_preferences_loaded = true;
-                }
+        if let Ok(bytes) = fs::read(service_config_path()) {
+            if let Ok(preferences) = serde_json::from_slice::<ProtectionPreferences>(&bytes) {
+                self.protection_preferences = preferences;
+                self.protection_preferences_loaded = true;
             }
-            _ => {}
         }
     }
 
@@ -2110,6 +2097,15 @@ fn threat_events_path() -> PathBuf {
         .join("BDFR")
         .join("Sentinel")
         .join("events.jsonl")
+}
+
+fn service_config_path() -> PathBuf {
+    std::env::var_os("ProgramData")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from(r"C:\ProgramData"))
+        .join("BDFR")
+        .join("Sentinel")
+        .join("service.json")
 }
 
 fn service_status_path() -> PathBuf {
