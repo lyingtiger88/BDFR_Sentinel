@@ -337,7 +337,6 @@ mod windows_impl {
             assert_eq!(size_of::<ReplyBuffer>(), 24);
         }
     }
-
 }
 
 #[cfg(windows)]
