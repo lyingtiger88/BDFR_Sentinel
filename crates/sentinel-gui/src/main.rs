@@ -408,7 +408,7 @@ impl SentinelApp {
             Ok(status) if status.success() => {
                 self.last_service_refresh = Instant::now() - Duration::from_secs(10);
                 self.refresh_service_state();
-        self.refresh_threat_events();
+                self.refresh_threat_events();
                 self.status_text = format!("Protection service command completed: {command}");
             }
             Ok(_) => {
