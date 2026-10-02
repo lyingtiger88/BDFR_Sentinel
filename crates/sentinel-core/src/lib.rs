@@ -4,7 +4,7 @@ mod model;
 mod policy;
 mod scanner;
 
-pub use engine::{EngineRegistry, ScanEngine};
+pub use engine::{EngineRegistry, ScanContext, ScanEngine};
 pub use error::ScanError;
 pub use model::{
     Detection, DetectionCategory, DetectionKind, FileMetadata, ScanReport, ScanVerdict, ThreatLevel,
