@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::process::Command;
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread;
@@ -115,7 +117,16 @@ fn snapshot_all() -> HashMap<(String, String), String> {
 }
 
 fn query_values(key: &str) -> Result<Vec<(String, String)>, std::io::Error> {
-    let output = Command::new("reg.exe").args(["query", key]).output()?;
+    let mut command = Command::new("reg.exe");
+    command.args(["query", key]);
+
+    #[cfg(windows)]
+    {
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        command.creation_flags(CREATE_NO_WINDOW);
+    }
+
+    let output = command.output()?;
     if !output.status.success() {
         return Ok(Vec::new());
     }
