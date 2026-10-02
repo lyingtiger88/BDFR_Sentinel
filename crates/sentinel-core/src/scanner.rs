@@ -133,6 +133,8 @@ mod tests {
     use super::*;
     use crate::{Detection, DetectionCategory, DetectionKind, ScanEngine, ThreatLevel};
     use std::io::Write;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Arc;
 
     struct TestEngine;
 
@@ -180,6 +182,39 @@ mod tests {
         assert_eq!(report.verdict.detections.len(), 1);
         assert_eq!(report.metadata.size, 16);
         assert_eq!(report.metadata.sha256.len(), 64);
+    }
+
+    #[test]
+    fn cache_avoids_duplicate_engine_execution() {
+        struct CountingEngine(Arc<AtomicUsize>);
+
+        impl ScanEngine for CountingEngine {
+            fn name(&self) -> &'static str {
+                "counting"
+            }
+
+            fn scan_bytes(&self, _data: &[u8]) -> Result<Vec<Detection>, ScanError> {
+                self.0.fetch_add(1, Ordering::SeqCst);
+                Ok(Vec::new())
+            }
+        }
+
+        let temp = std::env::temp_dir().join(format!(
+            "bdfr-sentinel-cache-count-test-{}.bin",
+            std::process::id()
+        ));
+        fs::write(&temp, b"same file").unwrap();
+
+        let calls = Arc::new(AtomicUsize::new(0));
+        let mut registry = EngineRegistry::new();
+        registry.register(CountingEngine(Arc::clone(&calls)));
+
+        let scanner = FileScanner::new(ScannerConfig::default(), registry);
+        scanner.scan_file(&temp).unwrap();
+        scanner.scan_file(&temp).unwrap();
+
+        let _ = fs::remove_file(&temp);
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
     }
 
     #[test]
