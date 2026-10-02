@@ -1,4 +1,4 @@
-use crate::{DetectionPolicy, EngineRegistry, FileMetadata, ScanError, ScanReport};
+use crate::{DetectionPolicy, EngineRegistry, FileMetadata, ScanContext, ScanError, ScanReport};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::fs;
@@ -78,10 +78,15 @@ impl FileScanner {
         let data = fs::read(path)?;
         let sha256 = hex_sha256(&data);
 
+        let context = ScanContext {
+            data: &data,
+            sha256: &sha256,
+        };
+
         let mut detections = Vec::new();
         for engine in self.engines.engines() {
             let mut engine_detections =
-                engine.scan_bytes(&data).map_err(|err| ScanError::Engine {
+                engine.scan_context(&context).map_err(|err| ScanError::Engine {
                     engine: engine.name().to_string(),
                     message: err.to_string(),
                 })?;
