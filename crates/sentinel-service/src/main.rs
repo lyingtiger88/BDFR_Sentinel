@@ -136,6 +136,8 @@ struct StatusSnapshot {
     amsi_active: bool,
     etw_active: bool,
     minifilter_connected: bool,
+    behavior_active: bool,
+    definition_updates_active: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -145,6 +147,7 @@ struct SelfTestReport {
     quarantine_round_trip: bool,
     amsi_available: bool,
     memory_inspection_available: bool,
+    behavior_correlation: bool,
     passed: bool,
 }
 
@@ -432,11 +435,36 @@ fn run_self_test() -> Result<()> {
     let amsi_available = AmsiScanner::new().is_ok();
     let memory_inspection_available = executable_writable_regions(std::process::id()).is_ok();
 
+    let behavior_correlation = {
+        let mut engine = BehaviorEngine::default();
+        let _ = engine.observe(BehaviorSignal {
+            pid: 4242,
+            kind: BehaviorSignalKind::ScriptInterpreter,
+            weight: 45,
+            details: "self-test script interpreter".to_string(),
+        });
+        let _ = engine.observe(BehaviorSignal {
+            pid: 4242,
+            kind: BehaviorSignalKind::SuspiciousParentChild,
+            weight: 45,
+            details: "self-test parent-child".to_string(),
+        });
+        engine
+            .observe(BehaviorSignal {
+                pid: 4242,
+                kind: BehaviorSignalKind::RwxMemory,
+                weight: 45,
+                details: "self-test rwx memory".to_string(),
+            })
+            .is_actionable_malicious()
+    };
+
     let passed = hash_detection
         && realtime_detection
         && quarantine_round_trip
         && amsi_available
-        && memory_inspection_available;
+        && memory_inspection_available
+        && behavior_correlation;
 
     let report = SelfTestReport {
         hash_detection,
@@ -444,6 +472,7 @@ fn run_self_test() -> Result<()> {
         quarantine_round_trip,
         amsi_available,
         memory_inspection_available,
+        behavior_correlation,
         passed,
     };
 
@@ -976,6 +1005,8 @@ fn run_service() -> Result<()> {
         amsi_active,
         etw_process.is_some(),
         minifilter_broker.is_some(),
+        process_telemetry.is_some() || registry_telemetry.is_some() || etw_process.is_some(),
+        update_thread.is_some(),
     );
 
     status_handle.set_service_status(ServiceStatus {
@@ -1015,7 +1046,17 @@ fn run_service() -> Result<()> {
         monitor.stop();
     }
     write_status_snapshot(
-        &config, "stopped", false, false, false, false, false, false, false,
+        &config,
+        "stopped",
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
     );
 
     status_handle.set_service_status(ServiceStatus {
@@ -1495,6 +1536,8 @@ fn write_status_snapshot(
     amsi_active: bool,
     etw_active: bool,
     minifilter_connected: bool,
+    behavior_active: bool,
+    definition_updates_active: bool,
 ) {
     let snapshot = StatusSnapshot {
         service: SERVICE_NAME,
@@ -1508,6 +1551,8 @@ fn write_status_snapshot(
         amsi_active,
         etw_active,
         minifilter_connected,
+        behavior_active,
+        definition_updates_active,
     };
 
     if let Ok(bytes) = serde_json::to_vec_pretty(&snapshot) {
