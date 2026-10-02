@@ -745,7 +745,8 @@ fn run_service() -> Result<()> {
                 &[],
             );
 
-            if etw_memory_enabled && should_inspect_process_memory(executable.as_deref(), &signals) {
+            if etw_memory_enabled && should_inspect_process_memory(executable.as_deref(), &signals)
+            {
                 if let Ok(regions) = executable_writable_regions(event.process_id) {
                     for region in regions.into_iter().take(4) {
                         signals.push(BehaviorSignal {
@@ -1334,19 +1335,7 @@ fn is_preexecution_candidate(path: &Path) -> bool {
             .and_then(|ext| ext.to_str())
             .map(|ext| ext.to_ascii_lowercase())
             .as_deref(),
-        Some(
-            "exe"
-                | "dll"
-                | "sys"
-                | "scr"
-                | "com"
-                | "msi"
-                | "ps1"
-                | "bat"
-                | "cmd"
-                | "js"
-                | "vbs"
-        )
+        Some("exe" | "dll" | "sys" | "scr" | "com" | "msi" | "ps1" | "bat" | "cmd" | "js" | "vbs")
     )
 }
 
@@ -1360,9 +1349,7 @@ fn should_inspect_process_memory(
 
     executable.is_some_and(|path| {
         let lower = path.to_string_lossy().to_ascii_lowercase();
-        lower.contains(r"\temp\")
-            || lower.contains(r"\appdata\")
-            || lower.contains(r"\downloads\")
+        lower.contains(r"\temp\") || lower.contains(r"\appdata\") || lower.contains(r"\downloads\")
     })
 }
 
