@@ -189,6 +189,10 @@ struct ProtectionSnapshot {
     etw_active: bool,
     #[serde(default)]
     minifilter_connected: bool,
+    #[serde(default)]
+    behavior_active: bool,
+    #[serde(default)]
+    definition_updates_active: bool,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -1115,6 +1119,18 @@ impl SentinelApp {
                     "Not connected"
                 },
                 component_color(self.protection_snapshot.minifilter_connected),
+            );
+            status_row(
+                ui,
+                "Behavior correlation",
+                component_label(self.protection_snapshot.behavior_active),
+                component_color(self.protection_snapshot.behavior_active),
+            );
+            status_row(
+                ui,
+                "Definition updater",
+                component_label(self.protection_snapshot.definition_updates_active),
+                component_color(self.protection_snapshot.definition_updates_active),
             );
 
             ui.add_space(8.0);
