@@ -1596,3 +1596,43 @@ fn write_status_snapshot(
         let _ = fs::write(status_path(), bytes);
     }
 }
+
+
+#[cfg(test)]
+mod performance_policy_tests {
+    use super::*;
+
+    #[test]
+    fn preexecution_filter_ignores_non_executable_content() {
+        assert!(is_preexecution_candidate(Path::new(r"C:\Apps\sample.exe")));
+        assert!(is_preexecution_candidate(Path::new(r"C:\Apps\module.dll")));
+        assert!(is_preexecution_candidate(Path::new(r"C:\Scripts\task.ps1")));
+        assert!(!is_preexecution_candidate(Path::new(r"C:\Data\movie.mp4")));
+        assert!(!is_preexecution_candidate(Path::new(r"C:\Data\archive.zip")));
+        assert!(!is_preexecution_candidate(Path::new(r"C:\Data\document.pdf")));
+    }
+
+    #[test]
+    fn memory_inspection_is_risk_gated() {
+        let no_signals: Vec<BehaviorSignal> = Vec::new();
+        assert!(!should_inspect_process_memory(
+            Some(Path::new(r"C:\Windows\System32\notepad.exe")),
+            &no_signals,
+        ));
+        assert!(should_inspect_process_memory(
+            Some(Path::new(r"C:\Users\User\Downloads\sample.exe")),
+            &no_signals,
+        ));
+
+        let signals = vec![BehaviorSignal {
+            pid: 7,
+            kind: BehaviorSignalKind::ScriptInterpreter,
+            weight: 15,
+            details: "test".to_string(),
+        }];
+        assert!(should_inspect_process_memory(
+            Some(Path::new(r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe")),
+            &signals,
+        ));
+    }
+}
