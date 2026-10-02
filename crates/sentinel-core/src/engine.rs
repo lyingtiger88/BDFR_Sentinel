@@ -1,8 +1,17 @@
 use crate::{Detection, ScanError};
 
+pub struct ScanContext<'a> {
+    pub data: &'a [u8],
+    pub sha256: &'a str,
+}
+
 pub trait ScanEngine: Send + Sync {
     fn name(&self) -> &'static str;
     fn scan_bytes(&self, data: &[u8]) -> Result<Vec<Detection>, ScanError>;
+
+    fn scan_context(&self, context: &ScanContext<'_>) -> Result<Vec<Detection>, ScanError> {
+        self.scan_bytes(context.data)
+    }
 }
 
 #[derive(Default)]
