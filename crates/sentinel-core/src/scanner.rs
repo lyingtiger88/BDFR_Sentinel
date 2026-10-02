@@ -86,10 +86,12 @@ impl FileScanner {
         let mut detections = Vec::new();
         for engine in self.engines.engines() {
             let mut engine_detections =
-                engine.scan_context(&context).map_err(|err| ScanError::Engine {
-                    engine: engine.name().to_string(),
-                    message: err.to_string(),
-                })?;
+                engine
+                    .scan_context(&context)
+                    .map_err(|err| ScanError::Engine {
+                        engine: engine.name().to_string(),
+                        message: err.to_string(),
+                    })?;
             detections.append(&mut engine_detections);
         }
 

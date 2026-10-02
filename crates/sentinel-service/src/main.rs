@@ -1584,7 +1584,6 @@ fn write_status_snapshot(
     }
 }
 
-
 #[cfg(test)]
 mod performance_policy_tests {
     use super::*;
@@ -1595,8 +1594,12 @@ mod performance_policy_tests {
         assert!(is_preexecution_candidate(Path::new(r"C:\Apps\module.dll")));
         assert!(is_preexecution_candidate(Path::new(r"C:\Scripts\task.ps1")));
         assert!(!is_preexecution_candidate(Path::new(r"C:\Data\movie.mp4")));
-        assert!(!is_preexecution_candidate(Path::new(r"C:\Data\archive.zip")));
-        assert!(!is_preexecution_candidate(Path::new(r"C:\Data\document.pdf")));
+        assert!(!is_preexecution_candidate(Path::new(
+            r"C:\Data\archive.zip"
+        )));
+        assert!(!is_preexecution_candidate(Path::new(
+            r"C:\Data\document.pdf"
+        )));
     }
 
     #[test]
@@ -1618,7 +1621,9 @@ mod performance_policy_tests {
             details: "test".to_string(),
         }];
         assert!(should_inspect_process_memory(
-            Some(Path::new(r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe")),
+            Some(Path::new(
+                r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe"
+            )),
             &signals,
         ));
     }
