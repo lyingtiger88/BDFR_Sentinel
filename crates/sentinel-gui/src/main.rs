@@ -10,6 +10,8 @@ use serde::Deserialize;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{mpsc, Arc};
 use std::thread;
@@ -36,6 +38,18 @@ impl ThemeMode {
             Self::Light => "Light",
         }
     }
+}
+
+fn hidden_command(program: impl AsRef<std::ffi::OsStr>) -> Command {
+    let mut command = Command::new(program);
+
+    #[cfg(windows)]
+    {
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        command.creation_flags(CREATE_NO_WINDOW);
+    }
+
+    command
 }
 
 fn main() -> eframe::Result<()> {
@@ -366,7 +380,7 @@ impl SentinelApp {
         self.service_state = if !exe.is_file() {
             "Service binary missing".to_string()
         } else {
-            match Command::new(&exe).arg("status").output() {
+            match hidden_command(&exe).arg("status").output() {
                 Ok(output) if output.status.success() => {
                     let text = String::from_utf8_lossy(&output.stdout).trim().to_string();
                     if text.is_empty() {
@@ -397,11 +411,11 @@ impl SentinelApp {
 
         let escaped = exe.display().to_string().replace('\'', "''");
         let script = format!(
-            "Start-Process -FilePath '{}' -ArgumentList '{}' -Verb RunAs -Wait",
+            "Start-Process -FilePath '{}' -ArgumentList '{}' -Verb RunAs -WindowStyle Hidden -Wait",
             escaped, command
         );
 
-        match Command::new("powershell.exe")
+        match hidden_command("powershell.exe")
             .args(["-NoProfile", "-Command", &script])
             .status()
         {
@@ -426,7 +440,7 @@ impl SentinelApp {
             return;
         }
 
-        match Command::new(&exe).args(["config", "show"]).output() {
+        match hidden_command(&exe).args(["config", "show"]).output() {
             Ok(output) if output.status.success() => {
                 if let Ok(preferences) =
                     serde_json::from_slice::<ProtectionPreferences>(&output.stdout)
@@ -488,12 +502,12 @@ impl SentinelApp {
         );
 
         let script = format!(
-            "Start-Process -FilePath '{}' -ArgumentList @({}) -Verb RunAs -Wait",
+            "Start-Process -FilePath '{}' -ArgumentList @({}) -Verb RunAs -WindowStyle Hidden -Wait",
             escaped_exe,
             argument_literals.join(",")
         );
 
-        match Command::new("powershell.exe")
+        match hidden_command("powershell.exe")
             .args(["-NoProfile", "-Command", &script])
             .status()
         {
@@ -522,7 +536,7 @@ impl SentinelApp {
 
         self.status_text = "Running protection self-test…".to_string();
 
-        match Command::new(&exe).arg("self-test").output() {
+        match hidden_command(&exe).arg("self-test").output() {
             Ok(output) => {
                 let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
                 let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
