@@ -356,5 +356,3 @@ impl MinifilterBroker {
 
     pub fn stop(&mut self) {}
 }
-
-
