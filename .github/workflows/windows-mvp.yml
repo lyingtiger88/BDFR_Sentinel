@@ -32,6 +32,9 @@ jobs:
       - name: CLI smoke test
         run: target\release\bdfr-sentinel.exe status
 
+      - name: Scanner performance smoke test
+        run: target\release\bdfr-sentinel.exe perf-smoke --size-mb 8 --iterations 2
+
       - name: Protection engine self-test
         shell: pwsh
         run: |
