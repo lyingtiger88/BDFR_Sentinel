@@ -138,6 +138,7 @@ enum Page {
     Dashboard,
     Scan,
     Quarantine,
+    History,
     Settings,
 }
 
@@ -188,6 +189,15 @@ struct ProtectionSnapshot {
     etw_active: bool,
     #[serde(default)]
     minifilter_connected: bool,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct ThreatEventView {
+    unix_time: u64,
+    source: String,
+    action: String,
+    path: String,
+    details: String,
 }
 
 fn default_enabled() -> bool {
@@ -271,6 +281,8 @@ struct SentinelApp {
     last_service_refresh: Instant,
     show_self_test: bool,
     self_test_output: String,
+    threat_events: Vec<ThreatEventView>,
+    last_event_refresh: Instant,
 }
 
 impl SentinelApp {
@@ -322,11 +334,14 @@ impl SentinelApp {
             last_service_refresh: Instant::now() - Duration::from_secs(10),
             show_self_test: false,
             self_test_output: String::new(),
+            threat_events: Vec::new(),
+            last_event_refresh: Instant::now() - Duration::from_secs(10),
         };
         app.refresh_quarantine();
         app.refresh_metrics();
         app.refresh_service_state();
         app.load_service_preferences();
+        app.refresh_threat_events();
         app
     }
 
@@ -389,6 +404,7 @@ impl SentinelApp {
             Ok(status) if status.success() => {
                 self.last_service_refresh = Instant::now() - Duration::from_secs(10);
                 self.refresh_service_state();
+        self.refresh_threat_events();
                 self.status_text = format!("Protection service command completed: {command}");
             }
             Ok(_) => {
@@ -529,6 +545,26 @@ impl SentinelApp {
                 self.show_self_test = true;
             }
         }
+    }
+
+    fn refresh_threat_events(&mut self) {
+        if self.last_event_refresh.elapsed() < Duration::from_secs(2) {
+            return;
+        }
+
+        let path = threat_events_path();
+        let mut events = Vec::new();
+
+        if let Ok(text) = fs::read_to_string(path) {
+            for line in text.lines().rev().take(500) {
+                if let Ok(event) = serde_json::from_str::<ThreatEventView>(line) {
+                    events.push(event);
+                }
+            }
+        }
+
+        self.threat_events = events;
+        self.last_event_refresh = Instant::now();
     }
 
     fn refresh_metrics(&mut self) {
@@ -850,6 +886,7 @@ impl SentinelApp {
         self.nav_button(ui, Page::Dashboard, "⌂", "Dashboard");
         self.nav_button(ui, Page::Scan, "⌕", "Scan");
         self.nav_button(ui, Page::Quarantine, "▣", "Quarantine");
+        self.nav_button(ui, Page::History, "◷", "History");
         self.nav_button(ui, Page::Settings, "⚙", "Settings");
 
         ui.with_layout(egui::Layout::bottom_up(egui::Align::LEFT), |ui| {
@@ -1314,6 +1351,82 @@ impl SentinelApp {
         });
     }
 
+    fn history_page(&mut self, ui: &mut egui::Ui) {
+        page_header(
+            ui,
+            "Threat history",
+            "Review blocks, quarantines and protection events recorded by the service.",
+        );
+
+        ui.horizontal(|ui| {
+            ui.label(format!("{} recent event(s)", self.threat_events.len()));
+            if fluent_button(ui, "Refresh", false).clicked() {
+                self.last_event_refresh = Instant::now() - Duration::from_secs(10);
+                self.refresh_threat_events();
+            }
+        });
+
+        ui.add_space(12.0);
+
+        egui::ScrollArea::vertical().show(ui, |ui| {
+            if self.threat_events.is_empty() {
+                settings_card(ui, "No recorded threat events", |ui| {
+                    ui.label(
+                        egui::RichText::new(
+                            "Protection events will appear here when Sentinel blocks or quarantines a threat.",
+                        )
+                        .color(ui.visuals().weak_text_color()),
+                    );
+                });
+                return;
+            }
+
+            for event in &self.threat_events {
+                egui::Frame::new()
+                    .fill(ui.visuals().faint_bg_color)
+                    .corner_radius(10.0)
+                    .inner_margin(16.0)
+                    .outer_margin(egui::Margin::symmetric(0, 5))
+                    .show(ui, |ui| {
+                        ui.horizontal(|ui| {
+                            ui.label(
+                                egui::RichText::new(event.action.to_ascii_uppercase())
+                                    .strong()
+                                    .color(if event.action.eq_ignore_ascii_case("block") {
+                                        BAD
+                                    } else {
+                                        WARN
+                                    }),
+                            );
+                            ui.label(
+                                egui::RichText::new(format!("via {}", event.source))
+                                    .color(ui.visuals().hyperlink_color),
+                            );
+                            ui.with_layout(
+                                egui::Layout::right_to_left(egui::Align::Center),
+                                |ui| {
+                                    ui.label(
+                                        egui::RichText::new(format!("Unix {}", event.unix_time))
+                                            .size(11.0)
+                                            .color(ui.visuals().weak_text_color()),
+                                    );
+                                },
+                            );
+                        });
+
+                        ui.label(egui::RichText::new(&event.path).strong());
+                        if !event.details.is_empty() {
+                            ui.label(
+                                egui::RichText::new(&event.details)
+                                    .size(11.0)
+                                    .color(ui.visuals().weak_text_color()),
+                            );
+                        }
+                    });
+            }
+        });
+    }
+
     fn settings_page(&mut self, ui: &mut egui::Ui) {
         let hdb_current = self.hdb_path.clone();
         let hsb_current = self.hsb_path.clone();
@@ -1706,6 +1819,7 @@ impl eframe::App for SentinelApp {
                 Page::Dashboard => self.dashboard(ui),
                 Page::Scan => self.scan_page(ui),
                 Page::Quarantine => self.quarantine_page(ui),
+                Page::History => self.history_page(ui),
                 Page::Settings => self.settings_page(ui),
             });
 
@@ -1957,6 +2071,15 @@ fn component_color(active: bool) -> egui::Color32 {
     } else {
         WARN
     }
+}
+
+fn threat_events_path() -> PathBuf {
+    std::env::var_os("ProgramData")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from(r"C:\ProgramData"))
+        .join("BDFR")
+        .join("Sentinel")
+        .join("events.jsonl")
 }
 
 fn service_status_path() -> PathBuf {
