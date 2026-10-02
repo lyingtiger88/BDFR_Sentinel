@@ -825,9 +825,10 @@ fn run_service() -> Result<()> {
     let process_auto_quarantine = config.auto_quarantine;
     let memory_telemetry_enabled = config.enable_memory_telemetry;
     let process_behavior = Arc::clone(&behavior);
-    let process_telemetry = if config.enable_process_telemetry {
+    let process_telemetry = if config.enable_process_telemetry && etw_process.is_none() {
+        info!("ETW unavailable or disabled; enabling low-frequency process polling fallback");
         Some(ProcessTelemetry::start(
-            Duration::from_millis(750),
+            Duration::from_secs(2),
             move |event| {
                 if event.kind != ProcessEventKind::Started {
                     return;
@@ -918,7 +919,7 @@ fn run_service() -> Result<()> {
     let registry_behavior = Arc::clone(&behavior);
     let registry_telemetry = if config.enable_registry_telemetry {
         Some(RegistryTelemetry::start(
-            Duration::from_secs(2),
+            Duration::from_secs(10),
             move |event| {
                 if matches!(
                     event.kind,
@@ -1022,7 +1023,7 @@ fn run_service() -> Result<()> {
     info!("BDFR Sentinel real-time protection service started");
 
     while !stopped.load(Ordering::Relaxed) {
-        thread::sleep(Duration::from_millis(250));
+        thread::sleep(Duration::from_secs(1));
     }
 
     update_stop.store(true, Ordering::Relaxed);
