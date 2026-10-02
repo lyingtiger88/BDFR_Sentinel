@@ -169,7 +169,7 @@ where
         }
 
         let upper = WAIT_OBJECT_0 + handles.len() as u32;
-        if result < WAIT_OBJECT_0 || result >= upper {
+        if result >= upper {
             break;
         }
 
