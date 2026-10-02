@@ -1,12 +1,17 @@
 use crate::{DetectionPolicy, EngineRegistry, FileMetadata, ScanError, ScanReport};
 use sha2::{Digest, Sha256};
+use std::collections::HashMap;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::sync::Mutex;
+use std::time::{Duration, Instant, SystemTime};
 
 #[derive(Debug, Clone)]
 pub struct ScannerConfig {
     pub max_file_size: u64,
     pub policy: DetectionPolicy,
+    pub cache_capacity: usize,
+    pub cache_ttl: Duration,
 }
 
 impl Default for ScannerConfig {
@@ -14,18 +19,33 @@ impl Default for ScannerConfig {
         Self {
             max_file_size: 128 * 1024 * 1024,
             policy: DetectionPolicy::default(),
+            cache_capacity: 4096,
+            cache_ttl: Duration::from_secs(30),
         }
     }
+}
+
+#[derive(Debug, Clone)]
+struct CachedScan {
+    len: u64,
+    modified: Option<SystemTime>,
+    cached_at: Instant,
+    report: ScanReport,
 }
 
 pub struct FileScanner {
     config: ScannerConfig,
     engines: EngineRegistry,
+    cache: Mutex<HashMap<PathBuf, CachedScan>>,
 }
 
 impl FileScanner {
     pub fn new(config: ScannerConfig, engines: EngineRegistry) -> Self {
-        Self { config, engines }
+        Self {
+            config,
+            engines,
+            cache: Mutex::new(HashMap::new()),
+        }
     }
 
     pub fn scan_file<P: AsRef<Path>>(&self, path: P) -> Result<ScanReport, ScanError> {
@@ -37,6 +57,22 @@ impl FileScanner {
                 actual: metadata.len(),
                 max: self.config.max_file_size,
             });
+        }
+
+        let modified = metadata.modified().ok();
+        let cache_key = path.to_path_buf();
+
+        if self.config.cache_capacity > 0 {
+            if let Ok(cache) = self.cache.lock() {
+                if let Some(cached) = cache.get(&cache_key) {
+                    if cached.len == metadata.len()
+                        && cached.modified == modified
+                        && cached.cached_at.elapsed() <= self.config.cache_ttl
+                    {
+                        return Ok(cached.report.clone());
+                    }
+                }
+            }
         }
 
         let data = fs::read(path)?;
@@ -52,14 +88,33 @@ impl FileScanner {
             detections.append(&mut engine_detections);
         }
 
-        Ok(ScanReport {
+        let report = ScanReport {
             path: path.display().to_string(),
             metadata: FileMetadata {
                 size: metadata.len(),
                 sha256,
             },
             verdict: self.config.policy.evaluate(detections),
-        })
+        };
+
+        if self.config.cache_capacity > 0 {
+            if let Ok(mut cache) = self.cache.lock() {
+                if cache.len() >= self.config.cache_capacity {
+                    cache.clear();
+                }
+                cache.insert(
+                    cache_key,
+                    CachedScan {
+                        len: metadata.len(),
+                        modified,
+                        cached_at: Instant::now(),
+                        report: report.clone(),
+                    },
+                );
+            }
+        }
+
+        Ok(report)
     }
 }
 
@@ -125,5 +180,21 @@ mod tests {
         assert_eq!(report.verdict.detections.len(), 1);
         assert_eq!(report.metadata.size, 16);
         assert_eq!(report.metadata.sha256.len(), 64);
+    }
+
+    #[test]
+    fn repeated_unchanged_scan_uses_cached_report() {
+        let temp = std::env::temp_dir().join(format!(
+            "bdfr-sentinel-cache-test-{}.bin",
+            std::process::id()
+        ));
+        fs::write(&temp, b"cache me").unwrap();
+
+        let scanner = FileScanner::new(ScannerConfig::default(), EngineRegistry::new());
+        let first = scanner.scan_file(&temp).unwrap();
+        let second = scanner.scan_file(&temp).unwrap();
+
+        let _ = fs::remove_file(&temp);
+        assert_eq!(first, second);
     }
 }
