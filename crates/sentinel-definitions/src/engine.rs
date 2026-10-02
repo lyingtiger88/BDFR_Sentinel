@@ -1,6 +1,6 @@
 use crate::ClamHashDatabase;
 use md5::{Digest, Md5};
-use sentinel_core::{Detection, DetectionKind, ScanEngine, ScanError};
+use sentinel_core::{Detection, DetectionKind, ScanContext, ScanEngine, ScanError};
 use sha2::Sha256;
 
 #[derive(Debug, Default)]
@@ -36,11 +36,26 @@ impl ScanEngine for HashDefinitionEngine {
     }
 
     fn scan_bytes(&self, data: &[u8]) -> Result<Vec<Detection>, ScanError> {
+        let sha256 = if self.hsb.is_some() {
+            let mut hasher = Sha256::new();
+            hasher.update(data);
+            format!("{:x}", hasher.finalize())
+        } else {
+            String::new()
+        };
+
+        self.scan_context(&ScanContext {
+            data,
+            sha256: &sha256,
+        })
+    }
+
+    fn scan_context(&self, context: &ScanContext<'_>) -> Result<Vec<Detection>, ScanError> {
         let mut detections = Vec::new();
 
         if let Some(db) = &self.hdb {
             let mut hasher = Md5::new();
-            hasher.update(data);
+            hasher.update(context.data);
             let hash = format!("{:x}", hasher.finalize());
 
             if let Some(entry) = db.lookup_hash(&hash) {
@@ -57,11 +72,9 @@ impl ScanEngine for HashDefinitionEngine {
         }
 
         if let Some(db) = &self.hsb {
-            let mut hasher = Sha256::new();
-            hasher.update(data);
-            let hash = format!("{:x}", hasher.finalize());
+            let hash = context.sha256;
 
-            if let Some(entry) = db.lookup_hash(&hash) {
+            if let Some(entry) = db.lookup_hash(hash) {
                 detections.push(Detection {
                     engine: self.name().to_string(),
                     rule_id: Some(entry.name.clone()),
