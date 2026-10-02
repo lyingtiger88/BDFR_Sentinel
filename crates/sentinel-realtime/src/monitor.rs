@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::{mpsc, Arc};
 use std::thread;
-use std::time::Instant;
+use std::time::{Duration, Instant, SystemTime};
 use tracing::{debug, error, warn};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -39,6 +39,12 @@ pub struct MonitorEvent {
     pub path: PathBuf,
     pub kind: MonitorEventKind,
     pub report: Option<ScanReport>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct FileFingerprint {
+    len: u64,
+    modified: Option<SystemTime>,
 }
 
 pub struct RealtimeMonitor {
@@ -124,6 +130,8 @@ impl RealtimeMonitor {
             .name("bdfr-sentinel-realtime".to_string())
             .spawn(move || {
                 let mut last_seen: HashMap<PathBuf, Instant> = HashMap::new();
+                let mut fingerprints: HashMap<PathBuf, FileFingerprint> = HashMap::new();
+                let mut processed_events: usize = 0;
 
                 while !stop.load(Ordering::Relaxed) {
                     let event = match rx.recv_timeout(std::time::Duration::from_millis(200)) {
@@ -146,9 +154,9 @@ impl RealtimeMonitor {
                     };
 
                     for path in event.paths {
-                        if !should_scan(&config, &path) {
+                        let Some(fingerprint) = file_fingerprint(&config, &path) else {
                             continue;
-                        }
+                        };
 
                         let now = Instant::now();
                         if let Some(previous) = last_seen.get(&path) {
@@ -158,6 +166,24 @@ impl RealtimeMonitor {
                             }
                         }
                         last_seen.insert(path.clone(), now);
+
+                        if fingerprints.get(&path).is_some_and(|known| *known == fingerprint) {
+                            debug!(path = %path.display(), "unchanged file fingerprint; skipping duplicate realtime scan");
+                            continue;
+                        }
+                        fingerprints.insert(path.clone(), fingerprint);
+
+                        processed_events = processed_events.wrapping_add(1);
+                        if processed_events % 1024 == 0 {
+                            let cutoff = Duration::from_secs(60);
+                            last_seen.retain(|_, seen| now.duration_since(*seen) <= cutoff);
+                            if fingerprints.len() > 8192 {
+                                fingerprints.retain(|path, _| path.exists());
+                                if fingerprints.len() > 8192 {
+                                    fingerprints.clear();
+                                }
+                            }
+                        }
 
                         let report = match scanner.scan_file(&path) {
                             Ok(report) => Some(report),
@@ -200,15 +226,20 @@ fn classify_event(kind: &EventKind) -> Option<MonitorEventKind> {
     }
 }
 
-fn should_scan(config: &RealtimeConfig, path: &Path) -> bool {
-    if !path.is_file() || !config.accepts_extension(path) {
-        return false;
+fn file_fingerprint(config: &RealtimeConfig, path: &Path) -> Option<FileFingerprint> {
+    if !config.accepts_extension(path) {
+        return None;
     }
 
-    match path.metadata() {
-        Ok(metadata) => metadata.len() <= config.max_file_size,
-        Err(_) => false,
+    let metadata = path.metadata().ok()?;
+    if !metadata.is_file() || metadata.len() > config.max_file_size {
+        return None;
     }
+
+    Some(FileFingerprint {
+        len: metadata.len(),
+        modified: metadata.modified().ok(),
+    })
 }
 
 #[cfg(test)]
@@ -229,6 +260,12 @@ mod tests {
         let config = RealtimeConfig::default();
         assert!(config.accepts_extension(Path::new("sample.EXE")));
         assert!(!config.accepts_extension(Path::new("sample.txt")));
+    }
+
+    #[test]
+    fn fingerprint_rejects_missing_files() {
+        let config = RealtimeConfig::default();
+        assert!(file_fingerprint(&config, Path::new("definitely-missing.exe")).is_none());
     }
 
     #[test]
