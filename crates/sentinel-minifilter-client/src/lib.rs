@@ -334,3 +334,29 @@ impl MinifilterBroker {
 
     pub fn stop(&mut self) {}
 }
+
+
+#[cfg(all(test, windows))]
+mod protocol_layout_tests {
+    use super::windows_impl::{
+        FilterMessageHeader, FilterReplyHeader, MessageBuffer, ReplyBuffer, ScanReplyWire,
+        ScanRequestWire,
+    };
+    use std::mem::{offset_of, size_of};
+
+    #[test]
+    fn filter_message_layout_matches_windows_x64_contract() {
+        assert_eq!(size_of::<FilterMessageHeader>(), 16);
+        assert_eq!(size_of::<ScanRequestWire>(), 2060);
+        assert_eq!(offset_of!(MessageBuffer, request), 16);
+        assert_eq!(size_of::<MessageBuffer>(), 2080);
+    }
+
+    #[test]
+    fn filter_reply_layout_matches_windows_x64_contract() {
+        assert_eq!(size_of::<FilterReplyHeader>(), 16);
+        assert_eq!(size_of::<ScanReplyWire>(), 8);
+        assert_eq!(offset_of!(ReplyBuffer, reply), 16);
+        assert_eq!(size_of::<ReplyBuffer>(), 24);
+    }
+}
