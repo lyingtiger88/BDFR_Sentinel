@@ -517,7 +517,7 @@ impl SentinelApp {
         let payload = BASE64.encode(payload_json);
 
         let escaped_exe = exe.display().to_string().replace('\'', "''");
-        let escaped_payload = payload.replace(''', "''");
+        let escaped_payload = payload.replace('\'', "''");
         let script = format!(
             "Start-Process -FilePath '{}' -ArgumentList @('config','apply-ui','{}') -Verb RunAs -WindowStyle Hidden -Wait",
             escaped_exe, escaped_payload
