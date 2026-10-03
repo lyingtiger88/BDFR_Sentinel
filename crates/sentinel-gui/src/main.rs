@@ -1059,8 +1059,7 @@ impl SentinelApp {
         );
 
         let service_running = self.service_state.contains("Running");
-        let realtime_running =
-            service_running && self.protection_snapshot.realtime_file_monitor;
+        let realtime_running = service_running && self.protection_snapshot.realtime_file_monitor;
         let realtime_changing = self.pending_realtime_target.is_some();
 
         egui::Frame::new()
