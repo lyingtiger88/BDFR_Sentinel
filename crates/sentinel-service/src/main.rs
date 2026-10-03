@@ -227,12 +227,10 @@ fn install_service() -> Result<()> {
 }
 
 fn configure_service_hardening() {
-    let run_sc = |args: &[&str], warning: &str| {
-        match Command::new("sc.exe").args(args).status() {
-            Ok(status) if status.success() => {}
-            Ok(_) => warn!("{warning}"),
-            Err(err) => warn!(error = %err, "{warning}"),
-        }
+    let run_sc = |args: &[&str], warning: &str| match Command::new("sc.exe").args(args).status() {
+        Ok(status) if status.success() => {}
+        Ok(_) => warn!("{warning}"),
+        Err(err) => warn!(error = %err, "{warning}"),
     };
 
     // Restart quickly after an unexpected process termination. Administrators can
