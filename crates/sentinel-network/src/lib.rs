@@ -148,7 +148,7 @@ mod kernel {
     use std::time::Duration;
     use wfp::{
         ActionType, AppIdConditionBuilder, FilterBuilder, FilterEngine, FilterEngineBuilder,
-        FilterWeight, Guid, IpAddressConditionBuilder, Layer, PortConditionBuilder,
+        FilterWeight, IpAddressConditionBuilder, Layer, PortConditionBuilder,
         ProtocolConditionBuilder, SubLayerBuilder, Transaction,
     };
 
