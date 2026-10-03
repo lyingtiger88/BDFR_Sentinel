@@ -84,6 +84,59 @@ jobs:
             throw "Protection service did not reach Running state"
           }
 
+          & $service config apply-restart realtime_file_monitor=false
+          if ($LASTEXITCODE -ne 0) {
+            & $service stop 2>$null
+            & $service uninstall 2>$null
+            throw "Could not disable real-time file monitor"
+          }
+
+          $realtimeOff = $false
+          $statusPath = Join-Path $env:ProgramData "BDFR\Sentinel\status.json"
+          for ($i = 0; $i -lt 30; $i++) {
+            Start-Sleep -Milliseconds 500
+            if (Test-Path $statusPath) {
+              try {
+                $snapshot = Get-Content $statusPath -Raw | ConvertFrom-Json
+                if ($snapshot.protection -eq "running" -and -not [bool]$snapshot.realtime_file_monitor) {
+                  $realtimeOff = $true
+                  break
+                }
+              } catch {}
+            }
+          }
+          if (-not $realtimeOff) {
+            & $service stop 2>$null
+            & $service uninstall 2>$null
+            throw "Real-time protection status did not transition to OFF"
+          }
+
+          & $service config apply-restart realtime_file_monitor=true
+          if ($LASTEXITCODE -ne 0) {
+            & $service stop 2>$null
+            & $service uninstall 2>$null
+            throw "Could not re-enable real-time file monitor"
+          }
+
+          $realtimeOn = $false
+          for ($i = 0; $i -lt 30; $i++) {
+            Start-Sleep -Milliseconds 500
+            if (Test-Path $statusPath) {
+              try {
+                $snapshot = Get-Content $statusPath -Raw | ConvertFrom-Json
+                if ($snapshot.protection -eq "running" -and [bool]$snapshot.realtime_file_monitor) {
+                  $realtimeOn = $true
+                  break
+                }
+              } catch {}
+            }
+          }
+          if (-not $realtimeOn) {
+            & $service stop 2>$null
+            & $service uninstall 2>$null
+            throw "Real-time protection status did not transition back to ON"
+          }
+
           $before = Get-CimInstance Win32_Service -Filter "Name='BDFRSentinel'"
           $oldPid = [int]$before.ProcessId
           if ($oldPid -le 0) {
