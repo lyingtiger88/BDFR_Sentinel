@@ -13,6 +13,8 @@ pub enum BehaviorSignalKind {
     RwxMemory,
     MassFileModification,
     CredentialAccess,
+    LivingOffTheLand,
+    DownloadExecution,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -174,6 +176,51 @@ pub fn process_start_signals(
         }
     }
 
+    if matches!(
+        name.as_str(),
+        "rundll32.exe"
+            | "regsvr32.exe"
+            | "certutil.exe"
+            | "bitsadmin.exe"
+            | "wmic.exe"
+            | "schtasks.exe"
+    ) {
+        out.push(BehaviorSignal {
+            pid,
+            kind: BehaviorSignalKind::LivingOffTheLand,
+            weight: 18,
+            details: format!("living-off-the-land binary started: {process_name}"),
+        });
+    }
+
+    if (name == "certutil.exe" && (command.contains("urlcache") || command.contains("http")))
+        || (name == "bitsadmin.exe" && command.contains("/transfer"))
+        || (name == "powershell.exe"
+            && (command.contains("invoke-webrequest")
+                || command.contains("downloadstring")
+                || command.contains("start-bitstransfer")))
+    {
+        out.push(BehaviorSignal {
+            pid,
+            kind: BehaviorSignalKind::DownloadExecution,
+            weight: 30,
+            details: "process command line contains download-oriented behavior".to_string(),
+        });
+    }
+
+    if name == "rundll32.exe"
+        && (command.contains("javascript:")
+            || command.contains("http://")
+            || command.contains("https://"))
+    {
+        out.push(BehaviorSignal {
+            pid,
+            kind: BehaviorSignalKind::LivingOffTheLand,
+            weight: 35,
+            details: "rundll32 invoked with script or remote content".to_string(),
+        });
+    }
+
     if command.contains("-enc ")
         || command.contains("-encodedcommand")
         || command.contains("frombase64string")
@@ -242,6 +289,28 @@ mod tests {
         });
         assert!(third.is_actionable_malicious());
         assert_eq!(third.distinct_signal_kinds, 3);
+    }
+
+    #[test]
+    fn lolbin_download_chain_adds_multiple_signals_without_auto_conviction() {
+        let signals = process_start_signals(
+            101,
+            Some("explorer.exe"),
+            "certutil.exe",
+            None,
+            &[
+                "certutil.exe".to_string(),
+                "-urlcache".to_string(),
+                "https://example.invalid/payload".to_string(),
+            ],
+        );
+
+        assert!(signals
+            .iter()
+            .any(|signal| signal.kind == BehaviorSignalKind::LivingOffTheLand));
+        assert!(signals
+            .iter()
+            .any(|signal| signal.kind == BehaviorSignalKind::DownloadExecution));
     }
 
     #[test]
