@@ -269,9 +269,10 @@ mod kernel {
     fn validate_policy(policy: &FirewallPolicy) -> io::Result<()> {
         if policy.mode == FirewallMode::Whitelist
             && !policy.allow_loopback
-            && policy.application_rules.iter().all(|rule| {
-                !rule.enabled || rule.action != FirewallAction::Allow
-            })
+            && policy
+                .application_rules
+                .iter()
+                .all(|rule| !rule.enabled || rule.action != FirewallAction::Allow)
         {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
