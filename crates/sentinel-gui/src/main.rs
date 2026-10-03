@@ -6,6 +6,7 @@ use base64::Engine as _;
 use eframe::egui;
 use sentinel_core::{EngineRegistry, FileScanner, ScanReport, ScannerConfig, ThreatLevel};
 use sentinel_definitions::{ClamHashDatabase, HashDefinitionEngine};
+use sentinel_network::FirewallMode;
 use sentinel_pe::PeAnalyzerEngine;
 use sentinel_quarantine::{QuarantineEntry, QuarantineStore};
 use serde::{Deserialize, Serialize};
@@ -287,6 +288,8 @@ struct ProtectionSnapshot {
     usb_protection_active: bool,
     #[serde(default)]
     network_protection_active: bool,
+    #[serde(default)]
+    firewall_mode: FirewallMode,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -331,6 +334,8 @@ struct ProtectionPreferences {
     #[serde(default = "default_enabled")]
     enable_network_protection: bool,
     #[serde(default)]
+    firewall_mode: FirewallMode,
+    #[serde(default)]
     enable_scheduled_scan: bool,
     #[serde(default = "default_enabled")]
     auto_quarantine: bool,
@@ -358,6 +363,7 @@ impl Default for ProtectionPreferences {
             enable_ransomware_shield: true,
             enable_usb_protection: true,
             enable_network_protection: true,
+            firewall_mode: FirewallMode::Smart,
             enable_scheduled_scan: false,
             auto_quarantine: true,
             scheduled_scan_interval_minutes: 24 * 60,
@@ -1334,7 +1340,7 @@ impl SentinelApp {
             );
             status_row(
                 ui,
-                "Network protection",
+                "Kernel WFP firewall",
                 component_label(self.protection_snapshot.network_protection_active),
                 component_color(self.protection_snapshot.network_protection_active),
             );
@@ -1757,7 +1763,46 @@ impl SentinelApp {
             );
             ui.checkbox(
                 &mut self.protection_preferences.enable_network_protection,
-                "Network IP/CIDR blocklist protection (Windows Firewall)",
+                "Kernel network firewall (Windows Filtering Platform)",
+            );
+            ui.horizontal(|ui| {
+                ui.label("Firewall mode:");
+                egui::ComboBox::from_id_salt("firewall_mode")
+                    .selected_text(match self.protection_preferences.firewall_mode {
+                        FirewallMode::Smart => "Smart",
+                        FirewallMode::Whitelist => "Whitelist / TinyWall-style",
+                        FirewallMode::BlockAll => "Block all",
+                        FirewallMode::AllowAll => "Allow all",
+                    })
+                    .show_ui(ui, |ui| {
+                        ui.selectable_value(
+                            &mut self.protection_preferences.firewall_mode,
+                            FirewallMode::Smart,
+                            "Smart",
+                        );
+                        ui.selectable_value(
+                            &mut self.protection_preferences.firewall_mode,
+                            FirewallMode::Whitelist,
+                            "Whitelist / TinyWall-style",
+                        );
+                        ui.selectable_value(
+                            &mut self.protection_preferences.firewall_mode,
+                            FirewallMode::BlockAll,
+                            "Block all",
+                        );
+                        ui.selectable_value(
+                            &mut self.protection_preferences.firewall_mode,
+                            FirewallMode::AllowAll,
+                            "Allow all",
+                        );
+                    });
+            });
+            ui.label(
+                egui::RichText::new(
+                    "Smart blocks known-bad IP/CIDR targets and explicit app rules. Whitelist blocks connections unless an app rule permits them.",
+                )
+                .size(11.0)
+                .color(ui.visuals().weak_text_color()),
             );
             ui.checkbox(
                 &mut self.protection_preferences.enable_scheduled_scan,
