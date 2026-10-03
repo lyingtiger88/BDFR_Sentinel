@@ -7,6 +7,8 @@ pub struct RealtimeConfig {
     pub recursive: bool,
     pub debounce: Duration,
     pub extensions: Vec<String>,
+    pub excluded_paths: Vec<PathBuf>,
+    pub excluded_extensions: Vec<String>,
     pub max_file_size: u64,
 }
 
@@ -28,6 +30,8 @@ impl Default for RealtimeConfig {
                 "vbs".to_string(),
                 "scr".to_string(),
             ],
+            excluded_paths: Vec::new(),
+            excluded_extensions: Vec::new(),
             max_file_size: 128 * 1024 * 1024,
         }
     }
@@ -47,5 +51,23 @@ impl RealtimeConfig {
                     .any(|allowed| allowed.eq_ignore_ascii_case(ext))
             })
             .unwrap_or(false)
+    }
+
+    pub fn is_excluded(&self, path: &std::path::Path) -> bool {
+        if self
+            .excluded_paths
+            .iter()
+            .any(|excluded| path.starts_with(excluded))
+        {
+            return true;
+        }
+
+        path.extension()
+            .and_then(|ext| ext.to_str())
+            .is_some_and(|ext| {
+                self.excluded_extensions
+                    .iter()
+                    .any(|excluded| excluded.eq_ignore_ascii_case(ext))
+            })
     }
 }
