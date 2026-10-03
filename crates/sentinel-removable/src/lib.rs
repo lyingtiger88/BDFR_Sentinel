@@ -82,7 +82,7 @@ fn removable_drives() -> HashSet<PathBuf> {
         let wide: Vec<u16> = root.encode_utf16().chain(std::iter::once(0)).collect();
         let drive_type = unsafe { GetDriveTypeW(wide.as_ptr()) };
 
-        if drive_type == DRIVE_REMOVABLE {
+        if drive_type == DRIVE_REMOVABLE_TYPE {
             drives.insert(PathBuf::from(root));
         }
     }
