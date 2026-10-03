@@ -580,6 +580,8 @@ fn run_service() -> Result<()> {
     let realtime_config = RealtimeConfig {
         paths: config.watch_paths.clone(),
         recursive: config.recursive,
+        excluded_paths: config.excluded_paths.clone(),
+        excluded_extensions: config.excluded_extensions.clone(),
         ..RealtimeConfig::default()
     };
 
@@ -700,10 +702,17 @@ fn run_service() -> Result<()> {
     let policy_scanner = Arc::clone(&scanner);
     let policy_quarantine = config.quarantine_dir.clone();
     let policy_auto_quarantine = config.auto_quarantine;
+    let policy_excluded_paths = config.excluded_paths.clone();
+    let policy_excluded_extensions = config.excluded_extensions.clone();
 
     let mut minifilter_broker = if config.enable_minifilter {
         match MinifilterBroker::start(move |request| {
             if request.path.starts_with(&policy_quarantine)
+                || is_path_excluded(
+                    &request.path,
+                    &policy_excluded_paths,
+                    &policy_excluded_extensions,
+                )
                 || !is_preexecution_candidate(&request.path)
             {
                 return MinifilterDecision::Allow;
@@ -1140,6 +1149,8 @@ fn run_protection_loop() -> Result<()> {
     let realtime_config = RealtimeConfig {
         paths: config.watch_paths.clone(),
         recursive: config.recursive,
+        excluded_paths: config.excluded_paths.clone(),
+        excluded_extensions: config.excluded_extensions.clone(),
         ..RealtimeConfig::default()
     };
 
@@ -1403,6 +1414,24 @@ fn terminate_process_for_malware(_pid: u32) -> Result<()> {
     anyhow::bail!("process termination is only available on Windows")
 }
 
+fn is_path_excluded(
+    path: &Path,
+    excluded_paths: &[PathBuf],
+    excluded_extensions: &[String],
+) -> bool {
+    if excluded_paths.iter().any(|excluded| path.starts_with(excluded)) {
+        return true;
+    }
+
+    path.extension()
+        .and_then(|ext| ext.to_str())
+        .is_some_and(|ext| {
+            excluded_extensions
+                .iter()
+                .any(|excluded| excluded.eq_ignore_ascii_case(ext))
+        })
+}
+
 fn is_preexecution_candidate(path: &Path) -> bool {
     matches!(
         path.extension()
@@ -1534,6 +1563,8 @@ fn apply_config_setting(config: &mut ServiceConfig, key: &str, enabled: bool) ->
         "etw" => config.enable_etw = enabled,
         "minifilter" => config.enable_minifilter = enabled,
         "definition_updates" => config.enable_definition_updates = enabled,
+        "ransomware_shield" => config.enable_ransomware_shield = enabled,
+        "scheduled_scan" => config.enable_scheduled_scan = enabled,
         "auto_quarantine" => config.auto_quarantine = enabled,
         _ => anyhow::bail!("unknown protection setting: {key}"),
     }
