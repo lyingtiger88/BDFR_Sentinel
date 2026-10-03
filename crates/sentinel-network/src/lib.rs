@@ -152,8 +152,7 @@ mod kernel {
         ProtocolConditionBuilder, SubLayerBuilder, Transaction,
     };
 
-    const SUBLAYER_GUID: wfp::GUID =
-        wfp::GUID::from_u128(0x7d56a933_10b8_4b0f_a22c_0b90f4ae5101);
+    const SUBLAYER_GUID: wfp::GUID = wfp::GUID::from_u128(0x7d56a933_10b8_4b0f_a22c_0b90f4ae5101);
 
     const WEIGHT_LOOPBACK: u64 = 10_000;
     const WEIGHT_BLOCKLIST: u64 = 9_500;
