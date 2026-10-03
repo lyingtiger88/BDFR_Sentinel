@@ -123,6 +123,7 @@ jobs:
           Copy-Item target\release\bdfr-sentinel-service.exe dist\bdfr-sentinel-service.exe
           Copy-Item README.md dist\README.md
           if (Test-Path docs\MVP.md) { Copy-Item docs\MVP.md dist\MVP.md }
+          if (Test-Path Definitions) { Copy-Item Definitions dist\Definitions -Recurse }
           if (Test-Path scripts\Install-Protection.ps1) { Copy-Item scripts\Install-Protection.ps1 dist\Install-Protection.ps1 }
           if (Test-Path scripts\Uninstall-Protection.ps1) { Copy-Item scripts\Uninstall-Protection.ps1 dist\Uninstall-Protection.ps1 }
           if (Test-Path scripts\Build-Minifilter.ps1) { Copy-Item scripts\Build-Minifilter.ps1 dist\Build-Minifilter.ps1 }
