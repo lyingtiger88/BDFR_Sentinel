@@ -219,6 +219,8 @@ struct ProtectionSnapshot {
     ransomware_active: bool,
     #[serde(default)]
     scheduled_scan_active: bool,
+    #[serde(default)]
+    usb_protection_active: bool,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -258,6 +260,8 @@ struct ProtectionPreferences {
     enable_definition_updates: bool,
     #[serde(default = "default_enabled")]
     enable_ransomware_shield: bool,
+    #[serde(default = "default_enabled")]
+    enable_usb_protection: bool,
     #[serde(default)]
     enable_scheduled_scan: bool,
     #[serde(default = "default_enabled")]
@@ -284,6 +288,7 @@ impl Default for ProtectionPreferences {
             enable_minifilter: true,
             enable_definition_updates: true,
             enable_ransomware_shield: true,
+            enable_usb_protection: true,
             enable_scheduled_scan: false,
             auto_quarantine: true,
             scheduled_scan_interval_minutes: 24 * 60,
@@ -1206,6 +1211,12 @@ impl SentinelApp {
                 component_label(self.protection_snapshot.scheduled_scan_active),
                 component_color(self.protection_snapshot.scheduled_scan_active),
             );
+            status_row(
+                ui,
+                "USB protection",
+                component_label(self.protection_snapshot.usb_protection_active),
+                component_color(self.protection_snapshot.usb_protection_active),
+            );
 
             ui.add_space(8.0);
             if fluent_button(ui, "Run protection self-test", false).clicked() {
@@ -1618,6 +1629,10 @@ impl SentinelApp {
             ui.checkbox(
                 &mut self.protection_preferences.enable_ransomware_shield,
                 "Ransomware Shield / mass file-change protection",
+            );
+            ui.checkbox(
+                &mut self.protection_preferences.enable_usb_protection,
+                "USB / removable drive quick protection",
             );
             ui.checkbox(
                 &mut self.protection_preferences.enable_scheduled_scan,
