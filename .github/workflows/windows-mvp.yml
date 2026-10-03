@@ -53,6 +53,18 @@ jobs:
             throw "Service recovery policy was not configured"
           }
 
+          $sidType = (sc.exe qsidtype BDFRSentinel | Out-String)
+          if ($sidType -notmatch "UNRESTRICTED") {
+            & $service uninstall 2>$null
+            throw "Service SID hardening was not configured"
+          }
+
+          $serviceAcl = (sc.exe sdshow BDFRSentinel | Out-String)
+          if ($serviceAcl -notmatch ";;;SY\)" -or $serviceAcl -notmatch ";;;BA\)") {
+            & $service uninstall 2>$null
+            throw "Service ACL hardening was not configured"
+          }
+
           & $service start
           if ($LASTEXITCODE -ne 0) { throw "Service start request failed" }
 
@@ -70,6 +82,32 @@ jobs:
             & $service stop 2>$null
             & $service uninstall 2>$null
             throw "Protection service did not reach Running state"
+          }
+
+          $before = Get-CimInstance Win32_Service -Filter "Name='BDFRSentinel'"
+          $oldPid = [int]$before.ProcessId
+          if ($oldPid -le 0) {
+            & $service stop 2>$null
+            & $service uninstall 2>$null
+            throw "Could not resolve protection service PID"
+          }
+
+          taskkill.exe /PID $oldPid /F | Out-Null
+
+          $recovered = $false
+          for ($i = 0; $i -lt 20; $i++) {
+            Start-Sleep -Milliseconds 500
+            $current = Get-CimInstance Win32_Service -Filter "Name='BDFRSentinel'"
+            if ($current.State -eq "Running" -and [int]$current.ProcessId -gt 0 -and [int]$current.ProcessId -ne $oldPid) {
+              $recovered = $true
+              break
+            }
+          }
+
+          if (-not $recovered) {
+            & $service stop 2>$null
+            & $service uninstall 2>$null
+            throw "Protection service did not recover after forced process termination"
           }
 
           & $service stop
