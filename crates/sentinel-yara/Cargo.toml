@@ -6,3 +6,5 @@ license.workspace = true
 
 [dependencies]
 sentinel-core = { path = "../sentinel-core" }
+
+yara-x.workspace = true
