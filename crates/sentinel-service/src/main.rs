@@ -10,6 +10,7 @@ use sentinel_definitions::{ClamHashDatabase, HashDefinitionEngine};
 use sentinel_etw::EtwProcessTelemetry;
 use sentinel_memory::executable_writable_regions;
 use sentinel_minifilter_client::{MinifilterBroker, MinifilterDecision};
+use sentinel_network::{apply_windows_firewall_blocklist, NetworkBlocklist};
 use sentinel_pe::PeAnalyzerEngine;
 use sentinel_quarantine::QuarantineStore;
 use sentinel_ransomware::RansomwareMonitor;
@@ -60,6 +61,8 @@ struct ServiceConfig {
     #[serde(default)]
     reputation_db_path: Option<PathBuf>,
     #[serde(default)]
+    network_blocklist_path: Option<PathBuf>,
+    #[serde(default)]
     excluded_paths: Vec<PathBuf>,
     #[serde(default)]
     excluded_extensions: Vec<String>,
@@ -90,6 +93,8 @@ struct ServiceConfig {
     enable_ransomware_shield: bool,
     #[serde(default = "default_true")]
     enable_usb_protection: bool,
+    #[serde(default = "default_true")]
+    enable_network_protection: bool,
     #[serde(default)]
     enable_scheduled_scan: bool,
     #[serde(default = "default_scheduled_scan_interval_minutes")]
@@ -120,6 +125,7 @@ struct UiProtectionSettings {
     enable_definition_updates: bool,
     enable_ransomware_shield: bool,
     enable_usb_protection: bool,
+    enable_network_protection: bool,
     enable_scheduled_scan: bool,
     auto_quarantine: bool,
     scheduled_scan_interval_minutes: u64,
@@ -146,6 +152,9 @@ impl ServiceConfig {
             hsb_path: Some(program_data.join("Definitions").join("main.hsb")),
             yara_rules_dir: Some(program_data.join("Definitions").join("Yara")),
             reputation_db_path: Some(program_data.join("Definitions").join("reputation.jsonl")),
+            network_blocklist_path: Some(
+                program_data.join("Definitions").join("network-blocklist.txt"),
+            ),
             excluded_paths: vec![program_data.join("Quarantine")],
             excluded_extensions: Vec::new(),
             excluded_processes: Vec::new(),
@@ -166,6 +175,7 @@ impl ServiceConfig {
             enable_definition_updates: true,
             enable_ransomware_shield: true,
             enable_usb_protection: true,
+            enable_network_protection: true,
             enable_scheduled_scan: false,
             scheduled_scan_interval_minutes: 24 * 60,
         }
@@ -201,6 +211,7 @@ struct StatusSnapshot {
     ransomware_active: bool,
     scheduled_scan_active: bool,
     usb_protection_active: bool,
+    network_protection_active: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -605,6 +616,30 @@ fn run_service() -> Result<()> {
         config.yara_rules_dir.as_deref(),
         config.reputation_db_path.as_deref(),
     )?);
+
+    let network_report = if config.enable_network_protection {
+        config
+            .network_blocklist_path
+            .as_deref()
+            .and_then(|path| match NetworkBlocklist::load(path) {
+                Ok(blocklist) if !blocklist.is_empty() => {
+                    let report = apply_windows_firewall_blocklist(&blocklist);
+                    info!(
+                        entries = report.loaded_entries,
+                        rules = report.applied_rules,
+                        "network protection blocklist applied"
+                    );
+                    Some(report)
+                }
+                Ok(_) => None,
+                Err(err) => {
+                    warn!(path = %path.display(), error = %err, "network blocklist load failed");
+                    None
+                }
+            })
+    } else {
+        None
+    };
 
     let realtime_config = RealtimeConfig {
         paths: config.watch_paths.clone(),
@@ -1331,6 +1366,7 @@ fn run_service() -> Result<()> {
     info!(
         ransomware_shield = ransomware_monitor.is_some(),
         usb_protection = usb_monitor.is_some(),
+        network_protection = network_report.is_some(),
         scheduled_scan = scheduled_scan_thread.is_some(),
         "BDFR Sentinel real-time protection service started"
     );
@@ -1849,6 +1885,7 @@ fn apply_config_setting(config: &mut ServiceConfig, key: &str, enabled: bool) ->
         "definition_updates" => config.enable_definition_updates = enabled,
         "ransomware_shield" => config.enable_ransomware_shield = enabled,
         "usb_protection" => config.enable_usb_protection = enabled,
+        "network_protection" => config.enable_network_protection = enabled,
         "scheduled_scan" => config.enable_scheduled_scan = enabled,
         "auto_quarantine" => config.auto_quarantine = enabled,
         _ => anyhow::bail!("unknown protection setting: {key}"),
@@ -1961,6 +1998,7 @@ fn config_command(args: Vec<String>) -> Result<()> {
             config.enable_definition_updates = settings.enable_definition_updates;
             config.enable_ransomware_shield = settings.enable_ransomware_shield;
             config.enable_usb_protection = settings.enable_usb_protection;
+            config.enable_network_protection = settings.enable_network_protection;
             config.enable_scheduled_scan = settings.enable_scheduled_scan;
             config.auto_quarantine = settings.auto_quarantine;
             config.scheduled_scan_interval_minutes =
@@ -2118,6 +2156,11 @@ fn write_status_snapshot(
         ransomware_active: config.enable_ransomware_shield,
         scheduled_scan_active: config.enable_scheduled_scan,
         usb_protection_active: config.enable_usb_protection,
+        network_protection_active: config.enable_network_protection
+            && config
+                .network_blocklist_path
+                .as_deref()
+                .is_some_and(Path::is_file),
     };
 
     if let Ok(bytes) = serde_json::to_vec_pretty(&snapshot) {
