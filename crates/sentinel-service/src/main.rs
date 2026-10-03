@@ -10,7 +10,9 @@ use sentinel_definitions::{ClamHashDatabase, HashDefinitionEngine};
 use sentinel_etw::EtwProcessTelemetry;
 use sentinel_memory::executable_writable_regions;
 use sentinel_minifilter_client::{MinifilterBroker, MinifilterDecision};
-use sentinel_network::{ApplicationRule, FirewallMode, FirewallPolicy, KernelFirewall, NetworkBlocklist};
+use sentinel_network::{
+    ApplicationRule, FirewallMode, FirewallPolicy, KernelFirewall, NetworkBlocklist,
+};
 use sentinel_pe::PeAnalyzerEngine;
 use sentinel_quarantine::QuarantineStore;
 use sentinel_ransomware::RansomwareMonitor;
@@ -1433,18 +1435,7 @@ fn run_service() -> Result<()> {
         monitor.stop();
     }
     write_status_snapshot(
-        &config,
-        "stopped",
-        false,
-        false,
-        false,
-        false,
-        false,
-        false,
-        false,
-        false,
-        false,
-        false,
+        &config, "stopped", false, false, false, false, false, false, false, false, false, false,
     );
 
     status_handle.set_service_status(ServiceStatus {
