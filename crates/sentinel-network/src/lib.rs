@@ -152,8 +152,7 @@ mod kernel {
         ProtocolConditionBuilder, SubLayerBuilder, Transaction,
     };
 
-    const SUBLAYER_GUID: Guid =
-        Guid::from_u128(0x7d56a933_10b8_4b0f_a22c_0b90f4ae5101);
+    const SUBLAYER_GUID: Guid = Guid::from_u128(0x7d56a933_10b8_4b0f_a22c_0b90f4ae5101);
 
     const WEIGHT_LOOPBACK: u64 = 10_000;
     const WEIGHT_BLOCKLIST: u64 = 9_500;
@@ -167,10 +166,7 @@ mod kernel {
     }
 
     impl KernelFirewall {
-        pub fn install(
-            blocklist: &NetworkBlocklist,
-            policy: &FirewallPolicy,
-        ) -> io::Result<Self> {
+        pub fn install(blocklist: &NetworkBlocklist, policy: &FirewallPolicy) -> io::Result<Self> {
             let mut engine = FilterEngineBuilder::default()
                 .dynamic()
                 .transaction_timeout(Duration::from_secs(5))
@@ -297,10 +293,7 @@ mod kernel {
         Ok(count)
     }
 
-    fn add_blocklist_network(
-        transaction: &Transaction<'_>,
-        network: &IpNet,
-    ) -> io::Result<usize> {
+    fn add_blocklist_network(transaction: &Transaction<'_>, network: &IpNet) -> io::Result<usize> {
         let (condition, layers): (_, &[Layer]) = match network {
             IpNet::V4(network) => (
                 IpAddressConditionBuilder::remote()
@@ -498,15 +491,9 @@ mod tests {
 
     #[test]
     fn duplicate_blocklist_entries_are_collapsed() {
-        let path = std::env::temp_dir().join(format!(
-            "bdfr-sentinel-network-{}.txt",
-            std::process::id()
-        ));
-        fs::write(
-            &path,
-            "203.0.113.0/24\n203.0.113.0/24\n198.51.100.10\n",
-        )
-        .unwrap();
+        let path =
+            std::env::temp_dir().join(format!("bdfr-sentinel-network-{}.txt", std::process::id()));
+        fs::write(&path, "203.0.113.0/24\n203.0.113.0/24\n198.51.100.10\n").unwrap();
 
         let list = NetworkBlocklist::load(&path).unwrap();
         let _ = fs::remove_file(path);
