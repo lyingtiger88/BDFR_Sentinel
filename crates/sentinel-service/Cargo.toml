@@ -34,3 +34,4 @@ sentinel-yara = { path = "../sentinel-yara" }
 sentinel-reputation = { path = "../sentinel-reputation" }
 sentinel-ransomware = { path = "../sentinel-ransomware" }
 sentinel-removable = { path = "../sentinel-removable" }
+sentinel-network = { path = "../sentinel-network" }
