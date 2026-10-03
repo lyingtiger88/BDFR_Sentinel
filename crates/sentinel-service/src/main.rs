@@ -10,7 +10,9 @@ use sentinel_memory::executable_writable_regions;
 use sentinel_minifilter_client::{MinifilterBroker, MinifilterDecision};
 use sentinel_pe::PeAnalyzerEngine;
 use sentinel_quarantine::QuarantineStore;
+use sentinel_ransomware::RansomwareShield;
 use sentinel_realtime::{RealtimeConfig, RealtimeMonitor};
+use sentinel_reputation::{ReputationDatabase, ReputationEngine};
 use sentinel_telemetry::{
     ProcessEventKind, ProcessTelemetry, RegistryEventKind, RegistryTelemetry,
 };
@@ -28,6 +30,7 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 use tracing::{error, info, warn};
+use walkdir::WalkDir;
 use windows_service::define_windows_service;
 use windows_service::service::{
     ServiceAccess, ServiceControl, ServiceControlAccept, ServiceErrorControl, ServiceExitCode,
@@ -51,6 +54,14 @@ struct ServiceConfig {
     hsb_path: Option<PathBuf>,
     #[serde(default)]
     yara_rules_dir: Option<PathBuf>,
+    #[serde(default)]
+    reputation_db_path: Option<PathBuf>,
+    #[serde(default)]
+    excluded_paths: Vec<PathBuf>,
+    #[serde(default)]
+    excluded_extensions: Vec<String>,
+    #[serde(default)]
+    excluded_processes: Vec<String>,
     quarantine_dir: PathBuf,
     #[serde(default)]
     definition_update_public_key: Option<PathBuf>,
@@ -72,10 +83,20 @@ struct ServiceConfig {
     enable_minifilter: bool,
     #[serde(default = "default_true")]
     enable_definition_updates: bool,
+    #[serde(default = "default_true")]
+    enable_ransomware_shield: bool,
+    #[serde(default)]
+    enable_scheduled_scan: bool,
+    #[serde(default = "default_scheduled_scan_interval_minutes")]
+    scheduled_scan_interval_minutes: u64,
 }
 
 fn default_definition_update_interval_minutes() -> u64 {
     30
+}
+
+fn default_scheduled_scan_interval_minutes() -> u64 {
+    24 * 60
 }
 
 fn default_true() -> bool {
@@ -99,6 +120,10 @@ impl ServiceConfig {
             hdb_path: Some(program_data.join("Definitions").join("main.hdb")),
             hsb_path: Some(program_data.join("Definitions").join("main.hsb")),
             yara_rules_dir: Some(program_data.join("Definitions").join("Yara")),
+            reputation_db_path: Some(program_data.join("Definitions").join("reputation.jsonl")),
+            excluded_paths: vec![program_data.join("Quarantine")],
+            excluded_extensions: Vec::new(),
+            excluded_processes: Vec::new(),
             quarantine_dir: program_data.join("Quarantine"),
             definition_update_public_key: Some(
                 program_data
@@ -114,6 +139,9 @@ impl ServiceConfig {
             enable_etw: true,
             enable_minifilter: true,
             enable_definition_updates: true,
+            enable_ransomware_shield: true,
+            enable_scheduled_scan: false,
+            scheduled_scan_interval_minutes: 24 * 60,
         }
     }
 }
