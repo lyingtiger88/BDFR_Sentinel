@@ -65,7 +65,7 @@ fn run_elevated_hidden(executable: &Path, args: &[String]) -> Result<()> {
     }
 
     fn quote_arg(value: &str) -> String {
-        if value.contains([' ', '\t', '"']) {
+        if value.chars().any(|ch| matches!(ch, ' ' | '\t' | '"')) {
             format!("\"{}\"", value.replace('"', "\\\""))
         } else {
             value.to_string()
