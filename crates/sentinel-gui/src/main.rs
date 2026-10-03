@@ -42,6 +42,70 @@ impl ThemeMode {
     }
 }
 
+#[cfg(windows)]
+fn run_elevated_hidden(executable: &Path, args: &[String]) -> Result<()> {
+    use std::ffi::{c_void, OsStr};
+    use std::os::windows::ffi::OsStrExt;
+    use std::ptr;
+
+    #[link(name = "shell32")]
+    extern "system" {
+        fn ShellExecuteW(
+            hwnd: *mut c_void,
+            operation: *const u16,
+            file: *const u16,
+            parameters: *const u16,
+            directory: *const u16,
+            show_cmd: i32,
+        ) -> isize;
+    }
+
+    fn wide(value: &OsStr) -> Vec<u16> {
+        value.encode_wide().chain(std::iter::once(0)).collect()
+    }
+
+    fn quote_arg(value: &str) -> String {
+        if value.contains([' ', '\t', '"']) {
+            format!("\"{}\"", value.replace('"', "\\\""))
+        } else {
+            value.to_string()
+        }
+    }
+
+    let operation = wide(OsStr::new("runas"));
+    let file = wide(executable.as_os_str());
+    let parameters_text = args
+        .iter()
+        .map(|arg| quote_arg(arg))
+        .collect::<Vec<_>>()
+        .join(" ");
+    let parameters = wide(OsStr::new(&parameters_text));
+
+    // SW_HIDE=0. Elevation still presents the single Windows UAC consent dialog,
+    // while the elevated console executable itself remains hidden.
+    let result = unsafe {
+        ShellExecuteW(
+            ptr::null_mut(),
+            operation.as_ptr(),
+            file.as_ptr(),
+            parameters.as_ptr(),
+            ptr::null(),
+            0,
+        )
+    };
+
+    if result <= 32 {
+        anyhow::bail!("Windows elevation request failed with code {result}");
+    }
+
+    Ok(())
+}
+
+#[cfg(not(windows))]
+fn run_elevated_hidden(_executable: &Path, _args: &[String]) -> Result<()> {
+    anyhow::bail!("elevated service commands are only supported on Windows")
+}
+
 fn hidden_command(program: impl AsRef<std::ffi::OsStr>) -> Command {
     let mut command = Command::new(program);
 
@@ -350,6 +414,8 @@ struct SentinelApp {
     last_event_refresh: Instant,
     new_excluded_extension: String,
     new_excluded_process: String,
+    pending_realtime_target: Option<bool>,
+    pending_realtime_started: Option<Instant>,
 }
 
 impl SentinelApp {
@@ -408,6 +474,8 @@ impl SentinelApp {
             last_event_refresh: Instant::now() - Duration::from_secs(10),
             new_excluded_extension: String::new(),
             new_excluded_process: String::new(),
+            pending_realtime_target: None,
+            pending_realtime_started: None,
         };
         app.refresh_quarantine();
         app.refresh_metrics();
@@ -456,7 +524,62 @@ impl SentinelApp {
             "Not installed".to_string()
         };
 
+        if let Some(target) = self.pending_realtime_target {
+            let reached_target = self.service_state.contains("Running")
+                && self.protection_snapshot.realtime_file_monitor == target;
+
+            if reached_target {
+                self.pending_realtime_target = None;
+                self.pending_realtime_started = None;
+                self.protection_preferences.enable_realtime_file_monitor = target;
+                self.status_text = if target {
+                    "Real-time protection enabled.".to_string()
+                } else {
+                    "Real-time protection disabled; protection service remains running.".to_string()
+                };
+            } else if self
+                .pending_realtime_started
+                .is_some_and(|started| started.elapsed() > Duration::from_secs(20))
+            {
+                self.pending_realtime_target = None;
+                self.pending_realtime_started = None;
+                self.status_text =
+                    "Real-time protection change timed out; refresh status and try again."
+                        .to_string();
+            }
+        }
+
         self.last_service_refresh = Instant::now();
+    }
+
+    fn set_realtime_protection(&mut self, enabled: bool) {
+        let exe = service_executable_path();
+        if !exe.is_file() {
+            self.status_text = "Protection service executable was not found.".to_string();
+            return;
+        }
+
+        let args = vec![
+            "config".to_string(),
+            "apply-restart".to_string(),
+            format!("realtime_file_monitor={enabled}"),
+        ];
+
+        match run_elevated_hidden(&exe, &args) {
+            Ok(()) => {
+                self.pending_realtime_target = Some(enabled);
+                self.pending_realtime_started = Some(Instant::now());
+                self.last_service_refresh = Instant::now() - Duration::from_secs(10);
+                self.status_text = if enabled {
+                    "Enabling real-time protection…".to_string()
+                } else {
+                    "Disabling real-time protection…".to_string()
+                };
+            }
+            Err(err) => {
+                self.status_text = format!("Could not change real-time protection: {err}");
+            }
+        }
     }
 
     fn invoke_service_command(&mut self, command: &str) {
@@ -466,24 +589,10 @@ impl SentinelApp {
             return;
         }
 
-        let escaped = exe.display().to_string().replace('\'', "''");
-        let script = format!(
-            "Start-Process -FilePath '{}' -ArgumentList '{}' -Verb RunAs -WindowStyle Hidden -Wait",
-            escaped, command
-        );
-
-        match hidden_command("powershell.exe")
-            .args(["-NoProfile", "-Command", &script])
-            .status()
-        {
-            Ok(status) if status.success() => {
+        match run_elevated_hidden(&exe, &[command.to_string()]) {
+            Ok(()) => {
                 self.last_service_refresh = Instant::now() - Duration::from_secs(10);
-                self.refresh_service_state();
-                self.refresh_threat_events();
-                self.status_text = format!("Protection service command completed: {command}");
-            }
-            Ok(_) => {
-                self.status_text = format!("Protection service command failed: {command}");
+                self.status_text = format!("Protection service command requested: {command}");
             }
             Err(err) => {
                 self.status_text = format!("Could not run protection service command: {err}");
@@ -515,28 +624,13 @@ impl SentinelApp {
             }
         };
         let payload = BASE64.encode(payload_json);
+        let args = vec!["config".to_string(), "apply-ui".to_string(), payload];
 
-        let escaped_exe = exe.display().to_string().replace('\'', "''");
-        let escaped_payload = payload.replace('\'', "''");
-        let script = format!(
-            "Start-Process -FilePath '{}' -ArgumentList @('config','apply-ui','{}') -Verb RunAs -WindowStyle Hidden -Wait",
-            escaped_exe, escaped_payload
-        );
-
-        match hidden_command("powershell.exe")
-            .args(["-NoProfile", "-Command", &script])
-            .status()
-        {
-            Ok(status) if status.success() => {
+        match run_elevated_hidden(&exe, &args) {
+            Ok(()) => {
                 self.status_text =
-                    "Protection settings and exclusions applied; service restart requested."
-                        .to_string();
+                    "Protection settings submitted; waiting for service restart…".to_string();
                 self.last_service_refresh = Instant::now() - Duration::from_secs(10);
-                self.refresh_service_state();
-                self.load_service_preferences();
-            }
-            Ok(_) => {
-                self.status_text = "Failed to apply protection settings.".to_string();
             }
             Err(err) => {
                 self.status_text = format!("Could not apply protection settings: {err}");
@@ -964,7 +1058,10 @@ impl SentinelApp {
             "A quick view of protection, scan activity and system load.",
         );
 
-        let realtime_running = self.service_state.contains("Running");
+        let service_running = self.service_state.contains("Running");
+        let realtime_running =
+            service_running && self.protection_snapshot.realtime_file_monitor;
+        let realtime_changing = self.pending_realtime_target.is_some();
 
         egui::Frame::new()
             .fill(ui.visuals().faint_bg_color)
@@ -979,8 +1076,12 @@ impl SentinelApp {
                     );
                     ui.vertical(|ui| {
                         ui.label(
-                            egui::RichText::new(if realtime_running {
+                            egui::RichText::new(if realtime_changing {
+                                "Real-time protection is changing"
+                            } else if realtime_running {
                                 "Real-time protection is on"
+                            } else if service_running {
+                                "Real-time protection is off"
                             } else {
                                 "Real-time protection needs attention"
                             })
@@ -997,19 +1098,29 @@ impl SentinelApp {
                     });
 
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if realtime_running {
-                            if fluent_button(ui, "Stop", true).clicked() {
-                                self.invoke_service_command("stop");
+                        if realtime_changing {
+                            ui.spinner();
+                            ui.label(
+                                egui::RichText::new("Changing…")
+                                    .size(12.0)
+                                    .color(ui.visuals().weak_text_color()),
+                            );
+                        } else if service_running {
+                            if realtime_running {
+                                if fluent_button(ui, "Turn off", true).clicked() {
+                                    self.set_realtime_protection(false);
+                                }
+                            } else if fluent_button(ui, "Turn on", false).clicked() {
+                                self.set_realtime_protection(true);
                             }
                         } else {
-                            if fluent_button(ui, "Start", false).clicked() {
+                            if fluent_button(ui, "Start service", false).clicked() {
                                 self.invoke_service_command("start");
                             }
                             if self.service_state.contains("Not installed")
                                 && fluent_button(ui, "Install", false).clicked()
                             {
                                 self.invoke_service_command("install");
-                                self.invoke_service_command("start");
                             }
                         }
 
@@ -2028,8 +2139,8 @@ impl eframe::App for SentinelApp {
         self.refresh_metrics();
         self.refresh_service_state();
 
-        if self.scanning {
-            ctx.request_repaint_after(Duration::from_millis(100));
+        if self.scanning || self.pending_realtime_target.is_some() {
+            ctx.request_repaint_after(Duration::from_millis(200));
         } else {
             ctx.request_repaint_after(Duration::from_millis(900));
         }
