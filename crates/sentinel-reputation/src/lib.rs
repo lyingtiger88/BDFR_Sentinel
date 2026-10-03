@@ -100,7 +100,10 @@ impl ScanEngine for ReputationEngine {
 
         Ok(vec![Detection {
             engine: self.name().to_string(),
-            rule_id: Some(format!("REP:{}", &context.sha256[..16.min(context.sha256.len())])),
+            rule_id: Some(format!(
+                "REP:{}",
+                &context.sha256[..16.min(context.sha256.len())]
+            )),
             kind: DetectionKind::Reputation,
             category: DetectionCategory::Malware,
             level: ThreatLevel::Malicious,

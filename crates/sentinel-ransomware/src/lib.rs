@@ -73,8 +73,8 @@ impl RansomwareShield {
         let unique_directories = directories.len();
         let unique_extensions = extensions.len();
 
-        let suspicious = recent_changes >= self.suspicious_change_threshold
-            && unique_directories >= 2;
+        let suspicious =
+            recent_changes >= self.suspicious_change_threshold && unique_directories >= 2;
         let malicious = recent_changes >= self.malicious_change_threshold
             && unique_directories >= 3
             && unique_extensions >= 3;
@@ -117,38 +117,39 @@ impl RansomwareMonitor {
         let shield_for_callback = Arc::clone(&shield);
         let callback_for_events = Arc::clone(&callback);
 
-        let mut watcher = notify::recommended_watcher(move |event: notify::Result<notify::Event>| {
-            let event = match event {
-                Ok(event) => event,
-                Err(err) => {
-                    warn!(error = %err, "ransomware filesystem watcher error");
-                    return;
-                }
-            };
-
-            if !matches!(event.kind, EventKind::Create(_) | EventKind::Modify(_)) {
-                return;
-            }
-
-            for path in event.paths {
-                if excluded_paths
-                    .iter()
-                    .any(|excluded| path.starts_with(excluded))
-                    || path.is_dir()
-                {
-                    continue;
-                }
-
-                let assessment = match shield_for_callback.lock() {
-                    Ok(mut shield) => shield.observe_path(&path),
-                    Err(_) => continue,
+        let mut watcher =
+            notify::recommended_watcher(move |event: notify::Result<notify::Event>| {
+                let event = match event {
+                    Ok(event) => event,
+                    Err(err) => {
+                        warn!(error = %err, "ransomware filesystem watcher error");
+                        return;
+                    }
                 };
 
-                if assessment.suspicious {
-                    callback_for_events(path, assessment);
+                if !matches!(event.kind, EventKind::Create(_) | EventKind::Modify(_)) {
+                    return;
                 }
-            }
-        })?;
+
+                for path in event.paths {
+                    if excluded_paths
+                        .iter()
+                        .any(|excluded| path.starts_with(excluded))
+                        || path.is_dir()
+                    {
+                        continue;
+                    }
+
+                    let assessment = match shield_for_callback.lock() {
+                        Ok(mut shield) => shield.observe_path(&path),
+                        Err(_) => continue,
+                    };
+
+                    if assessment.suspicious {
+                        callback_for_events(path, assessment);
+                    }
+                }
+            })?;
 
         for path in paths {
             if path.exists() {
@@ -174,8 +175,7 @@ mod tests {
 
         let mut final_assessment = None;
         for i in 0..6 {
-            let path =
-                PathBuf::from(format!(r"C:\Users\A\Dir{}\file{}.ext{}", i % 4, i, i % 4));
+            let path = PathBuf::from(format!(r"C:\Users\A\Dir{}\file{}.ext{}", i % 4, i, i % 4));
             final_assessment = Some(shield.observe_path(&path));
         }
 

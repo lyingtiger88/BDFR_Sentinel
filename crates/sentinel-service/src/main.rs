@@ -402,10 +402,7 @@ fn print_diagnostics() -> Result<()> {
             .definition_update_public_key
             .as_deref()
             .is_some_and(Path::is_file),
-        yara_rules_dir_exists: config
-            .yara_rules_dir
-            .as_deref()
-            .is_some_and(Path::is_dir),
+        yara_rules_dir_exists: config.yara_rules_dir.as_deref().is_some_and(Path::is_dir),
         status_snapshot_exists: status_path().is_file(),
     };
 
@@ -1595,7 +1592,10 @@ fn is_path_excluded(
     excluded_paths: &[PathBuf],
     excluded_extensions: &[String],
 ) -> bool {
-    if excluded_paths.iter().any(|excluded| path.starts_with(excluded)) {
+    if excluded_paths
+        .iter()
+        .any(|excluded| path.starts_with(excluded))
+    {
         return true;
     }
 
@@ -1941,10 +1941,7 @@ fn write_status_snapshot(
         minifilter_connected,
         behavior_active,
         definition_updates_active,
-        yara_active: config
-            .yara_rules_dir
-            .as_deref()
-            .is_some_and(Path::is_dir),
+        yara_active: config.yara_rules_dir.as_deref().is_some_and(Path::is_dir),
         reputation_active: config
             .reputation_db_path
             .as_deref()

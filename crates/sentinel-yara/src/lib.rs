@@ -112,8 +112,8 @@ impl YaraXBackend {
                 continue;
             }
 
-            let source = fs::read_to_string(&path)
-                .map_err(|err| format!("{}: {err}", path.display()))?;
+            let source =
+                fs::read_to_string(&path).map_err(|err| format!("{}: {err}", path.display()))?;
             sources.push((path, source));
         }
 
