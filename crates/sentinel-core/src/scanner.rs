@@ -200,9 +200,7 @@ impl FileScanner {
             if declared_size > self.config.archive_max_entry_size {
                 detections.push(archive_limit_detection(
                     "ARCHIVE-ENTRY-SIZE-001",
-                    format!(
-                        "archive entry too large: {entry_name} ({declared_size} bytes)"
-                    ),
+                    format!("archive entry too large: {entry_name} ({declared_size} bytes)"),
                 ));
                 continue;
             }
@@ -211,9 +209,7 @@ impl FileScanner {
             if expanded_total > self.config.archive_max_total_size {
                 detections.push(archive_limit_detection(
                     "ARCHIVE-TOTAL-SIZE-001",
-                    format!(
-                        "archive expanded-size budget exceeded while reading {entry_name}"
-                    ),
+                    format!("archive expanded-size budget exceeded while reading {entry_name}"),
                 ));
                 break;
             }
@@ -245,11 +241,7 @@ impl FileScanner {
 }
 
 fn looks_like_zip(data: &[u8]) -> bool {
-    data.len() >= 4
-        && matches!(
-            &data[..4],
-            b"PK\x03\x04" | b"PK\x05\x06" | b"PK\x07\x08"
-        )
+    data.len() >= 4 && matches!(&data[..4], b"PK\x03\x04" | b"PK\x05\x06" | b"PK\x07\x08")
 }
 
 fn archive_limit_detection(rule_id: &str, details: String) -> Detection {
@@ -354,11 +346,10 @@ mod tests {
 
         let _ = fs::remove_file(&temp);
         assert_eq!(report.verdict.level, ThreatLevel::Malicious);
-        assert!(report
-            .verdict
-            .detections
-            .iter()
-            .any(|d| d.details.as_deref().is_some_and(|v| v.contains("payload.bin"))));
+        assert!(report.verdict.detections.iter().any(|d| d
+            .details
+            .as_deref()
+            .is_some_and(|v| v.contains("payload.bin"))));
     }
 
     #[test]

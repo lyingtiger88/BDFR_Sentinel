@@ -1776,7 +1776,9 @@ impl SentinelApp {
                 });
             }
             if let Some(index) = remove_ext {
-                self.protection_preferences.excluded_extensions.remove(index);
+                self.protection_preferences
+                    .excluded_extensions
+                    .remove(index);
             }
 
             ui.separator();

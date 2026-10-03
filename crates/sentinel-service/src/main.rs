@@ -153,7 +153,9 @@ impl ServiceConfig {
             yara_rules_dir: Some(program_data.join("Definitions").join("Yara")),
             reputation_db_path: Some(program_data.join("Definitions").join("reputation.jsonl")),
             network_blocklist_path: Some(
-                program_data.join("Definitions").join("network-blocklist.txt"),
+                program_data
+                    .join("Definitions")
+                    .join("network-blocklist.txt"),
             ),
             excluded_paths: vec![program_data.join("Quarantine")],
             excluded_extensions: Vec::new(),
@@ -618,10 +620,8 @@ fn run_service() -> Result<()> {
     )?);
 
     let network_report = if config.enable_network_protection {
-        config
-            .network_blocklist_path
-            .as_deref()
-            .and_then(|path| match NetworkBlocklist::load(path) {
+        config.network_blocklist_path.as_deref().and_then(|path| {
+            match NetworkBlocklist::load(path) {
                 Ok(blocklist) if !blocklist.is_empty() => {
                     let report = apply_windows_firewall_blocklist(&blocklist);
                     info!(
@@ -636,7 +636,8 @@ fn run_service() -> Result<()> {
                     warn!(path = %path.display(), error = %err, "network blocklist load failed");
                     None
                 }
-            })
+            }
+        })
     } else {
         None
     };
@@ -817,20 +818,22 @@ fn run_service() -> Result<()> {
         let usb_excluded_paths = config.excluded_paths.clone();
         let usb_excluded_extensions = config.excluded_extensions.clone();
 
-        Some(RemovableMonitor::start(Duration::from_secs(3), move |drive| {
-            record_threat_event(
-                "usb-protection",
-                "scan-start",
-                &drive,
-                "new removable drive detected",
-            );
+        Some(RemovableMonitor::start(
+            Duration::from_secs(3),
+            move |drive| {
+                record_threat_event(
+                    "usb-protection",
+                    "scan-start",
+                    &drive,
+                    "new removable drive detected",
+                );
 
-            let scanner = Arc::clone(&usb_scanner);
-            let quarantine_dir = usb_quarantine.clone();
-            let excluded_paths = usb_excluded_paths.clone();
-            let excluded_extensions = usb_excluded_extensions.clone();
+                let scanner = Arc::clone(&usb_scanner);
+                let quarantine_dir = usb_quarantine.clone();
+                let excluded_paths = usb_excluded_paths.clone();
+                let excluded_extensions = usb_excluded_extensions.clone();
 
-            let _ = thread::Builder::new()
+                let _ = thread::Builder::new()
                 .name("bdfr-sentinel-usb-scan".to_string())
                 .spawn(move || {
                     for entry in WalkDir::new(&drive)
@@ -875,7 +878,8 @@ fn run_service() -> Result<()> {
                         }
                     }
                 });
-        }))
+            },
+        ))
     } else {
         None
     };

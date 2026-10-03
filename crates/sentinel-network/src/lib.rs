@@ -55,7 +55,9 @@ impl NetworkBlocklist {
     }
 
     pub fn contains(&self, address: std::net::IpAddr) -> bool {
-        self.entries.iter().any(|network| network.contains(&address))
+        self.entries
+            .iter()
+            .any(|network| network.contains(&address))
     }
 
     pub fn entries(&self) -> &[IpNet] {
@@ -64,9 +66,7 @@ impl NetworkBlocklist {
 }
 
 #[cfg(windows)]
-pub fn apply_windows_firewall_blocklist(
-    blocklist: &NetworkBlocklist,
-) -> NetworkProtectionReport {
+pub fn apply_windows_firewall_blocklist(blocklist: &NetworkBlocklist) -> NetworkProtectionReport {
     for family in ["v4", "v6"] {
         for index in 0..MAX_RULE_CHUNKS {
             let name = format!("{RULE_PREFIX} {family}-{index}");
@@ -135,9 +135,7 @@ pub fn apply_windows_firewall_blocklist(
 }
 
 #[cfg(not(windows))]
-pub fn apply_windows_firewall_blocklist(
-    blocklist: &NetworkBlocklist,
-) -> NetworkProtectionReport {
+pub fn apply_windows_firewall_blocklist(blocklist: &NetworkBlocklist) -> NetworkProtectionReport {
     NetworkProtectionReport {
         loaded_entries: blocklist.len(),
         applied_rules: 0,
