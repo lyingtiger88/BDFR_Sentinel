@@ -19,6 +19,7 @@ members = [
     "crates/sentinel-etw",
     "crates/sentinel-reputation",
     "crates/sentinel-ransomware",
+    "crates/sentinel-removable",
 ]
 
 [workspace.package]
@@ -50,7 +51,7 @@ sysinfo = "0.37"
 windows-service = "0.8"
 yara-x = { version = "1.20", default-features = false, features = ["constant-folding", "exact-atoms", "fast-regexp", "pe-module", "hash-module", "math-module", "string-module"] }
 libloading = "0.8"
-windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_Security", "Win32_System_Registry", "Win32_System_Threading"] }
+windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_Security", "Win32_Storage_FileSystem", "Win32_System_Registry", "Win32_System_Threading"] }
 
 [profile.release]
 opt-level = 3
