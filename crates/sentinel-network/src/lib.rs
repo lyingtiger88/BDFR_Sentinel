@@ -90,6 +90,8 @@ pub struct NetworkProtectionReport {
     pub application_rules: usize,
     pub mode: FirewallMode,
     pub backend: String,
+    pub kernel_enforced: bool,
+    pub ipv6_enabled: bool,
 }
 
 impl NetworkBlocklist {
@@ -118,7 +120,7 @@ impl NetworkBlocklist {
             }
         }
 
-        Ok(Self { entries })
+        Ok(Self { entries }.compact())
     }
 
     pub fn len(&self) -> usize {
@@ -137,6 +139,34 @@ impl NetworkBlocklist {
 
     pub fn entries(&self) -> &[IpNet] {
         &self.entries
+    }
+
+    pub fn compact(mut self) -> Self {
+        self.entries.sort_by(|a, b| {
+            let family_a = matches!(a, IpNet::V6(_)) as u8;
+            let family_b = matches!(b, IpNet::V6(_)) as u8;
+            family_a
+                .cmp(&family_b)
+                .then(a.prefix_len().cmp(&b.prefix_len()))
+                .then(a.to_string().cmp(&b.to_string()))
+        });
+
+        let mut compacted: Vec<IpNet> = Vec::with_capacity(self.entries.len());
+        'candidate: for network in self.entries {
+            for existing in &compacted {
+                let contained = match (existing, &network) {
+                    (IpNet::V4(a), IpNet::V4(b)) => a.contains(&b.network()),
+                    (IpNet::V6(a), IpNet::V6(b)) => a.contains(&b.network()),
+                    _ => false,
+                };
+                if contained {
+                    continue 'candidate;
+                }
+            }
+            compacted.push(network);
+        }
+
+        Self { entries: compacted }
     }
 }
 
@@ -167,6 +197,7 @@ mod kernel {
 
     impl KernelFirewall {
         pub fn install(blocklist: &NetworkBlocklist, policy: &FirewallPolicy) -> io::Result<Self> {
+            validate_policy(policy)?;
             let mut engine = FilterEngineBuilder::default()
                 .dynamic()
                 .transaction_timeout(Duration::from_secs(5))
@@ -220,6 +251,8 @@ mod kernel {
                 application_rules,
                 mode: policy.mode,
                 backend: "wfp-ale-kernel".to_string(),
+                kernel_enforced: true,
+                ipv6_enabled: true,
             };
 
             Ok(Self {
@@ -231,6 +264,31 @@ mod kernel {
         pub fn report(&self) -> &NetworkProtectionReport {
             &self.report
         }
+    }
+
+    fn validate_policy(policy: &FirewallPolicy) -> io::Result<()> {
+        if policy.mode == FirewallMode::Whitelist
+            && !policy.allow_loopback
+            && policy.application_rules.iter().all(|rule| {
+                !rule.enabled || rule.action != FirewallAction::Allow
+            })
+        {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "whitelist policy would deny all traffic without any explicit allow rule",
+            ));
+        }
+
+        for rule in policy.application_rules.iter().filter(|rule| rule.enabled) {
+            if rule.remote_ports.contains(&0) {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "firewall rules cannot target remote port 0",
+                ));
+            }
+        }
+
+        Ok(())
     }
 
     fn add_loopback_filters(transaction: &Transaction<'_>) -> io::Result<usize> {
@@ -454,6 +512,8 @@ impl KernelFirewall {
                 application_rules: 0,
                 mode: policy.mode,
                 backend: "unsupported".to_string(),
+                kernel_enforced: false,
+                ipv6_enabled: false,
             },
         })
     }
@@ -487,6 +547,22 @@ mod tests {
         assert_eq!(policy.mode, FirewallMode::Smart);
         assert!(policy.allow_loopback);
         assert!(policy.application_rules.is_empty());
+    }
+
+    #[test]
+    fn covered_subnets_are_compacted() {
+        let list = NetworkBlocklist {
+            entries: vec![
+                "203.0.113.0/24".parse().unwrap(),
+                "203.0.113.0/25".parse().unwrap(),
+                "203.0.113.10/32".parse().unwrap(),
+                "2001:db8::/32".parse().unwrap(),
+                "2001:db8:1::/48".parse().unwrap(),
+            ],
+        }
+        .compact();
+
+        assert_eq!(list.len(), 2);
     }
 
     #[test]
