@@ -1,12 +1,14 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use anyhow::{Context, Result};
+use base64::engine::general_purpose::STANDARD as BASE64;
+use base64::Engine as _;
 use eframe::egui;
 use sentinel_core::{EngineRegistry, FileScanner, ScanReport, ScannerConfig, ThreatLevel};
 use sentinel_definitions::{ClamHashDatabase, HashDefinitionEngine};
 use sentinel_pe::PeAnalyzerEngine;
 use sentinel_quarantine::{QuarantineEntry, QuarantineStore};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::fs;
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
@@ -232,7 +234,11 @@ fn default_enabled() -> bool {
     true
 }
 
-#[derive(Debug, Clone, Deserialize)]
+fn default_scheduled_scan_interval_minutes() -> u64 {
+    24 * 60
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 struct ProtectionPreferences {
     #[serde(default = "default_enabled")]
     enable_realtime_file_monitor: bool,
@@ -256,6 +262,14 @@ struct ProtectionPreferences {
     enable_scheduled_scan: bool,
     #[serde(default = "default_enabled")]
     auto_quarantine: bool,
+    #[serde(default = "default_scheduled_scan_interval_minutes")]
+    scheduled_scan_interval_minutes: u64,
+    #[serde(default)]
+    excluded_paths: Vec<PathBuf>,
+    #[serde(default)]
+    excluded_extensions: Vec<String>,
+    #[serde(default)]
+    excluded_processes: Vec<String>,
 }
 
 impl Default for ProtectionPreferences {
@@ -272,6 +286,10 @@ impl Default for ProtectionPreferences {
             enable_ransomware_shield: true,
             enable_scheduled_scan: false,
             auto_quarantine: true,
+            scheduled_scan_interval_minutes: 24 * 60,
+            excluded_paths: Vec::new(),
+            excluded_extensions: Vec::new(),
+            excluded_processes: Vec::new(),
         }
     }
 }
@@ -320,6 +338,8 @@ struct SentinelApp {
     self_test_output: String,
     threat_events: Vec<ThreatEventView>,
     last_event_refresh: Instant,
+    new_excluded_extension: String,
+    new_excluded_process: String,
 }
 
 impl SentinelApp {
@@ -376,6 +396,8 @@ impl SentinelApp {
             self_test_output: String::new(),
             threat_events: Vec::new(),
             last_event_refresh: Instant::now() - Duration::from_secs(10),
+            new_excluded_extension: String::new(),
+            new_excluded_process: String::new(),
         };
         app.refresh_quarantine();
         app.refresh_metrics();
@@ -475,59 +497,20 @@ impl SentinelApp {
             return;
         }
 
-        let assignments = vec![
-            format!(
-                "realtime_file_monitor={}",
-                self.protection_preferences.enable_realtime_file_monitor
-            ),
-            format!(
-                "process_telemetry={}",
-                self.protection_preferences.enable_process_telemetry
-            ),
-            format!(
-                "registry_telemetry={}",
-                self.protection_preferences.enable_registry_telemetry
-            ),
-            format!(
-                "memory_telemetry={}",
-                self.protection_preferences.enable_memory_telemetry
-            ),
-            format!("amsi={}", self.protection_preferences.enable_amsi),
-            format!("etw={}", self.protection_preferences.enable_etw),
-            format!(
-                "minifilter={}",
-                self.protection_preferences.enable_minifilter
-            ),
-            format!(
-                "definition_updates={}",
-                self.protection_preferences.enable_definition_updates
-            ),
-            format!(
-                "ransomware_shield={}",
-                self.protection_preferences.enable_ransomware_shield
-            ),
-            format!(
-                "scheduled_scan={}",
-                self.protection_preferences.enable_scheduled_scan
-            ),
-            format!(
-                "auto_quarantine={}",
-                self.protection_preferences.auto_quarantine
-            ),
-        ];
+        let payload_json = match serde_json::to_vec(&self.protection_preferences) {
+            Ok(payload) => payload,
+            Err(err) => {
+                self.status_text = format!("Could not serialize protection settings: {err}");
+                return;
+            }
+        };
+        let payload = BASE64.encode(payload_json);
 
-        let escaped_exe = exe.display().to_string().replace('\'', "''");
-        let mut argument_literals = vec!["'config'".to_string(), "'apply-restart'".to_string()];
-        argument_literals.extend(
-            assignments
-                .iter()
-                .map(|value| format!("'{}'", value.replace('\'', "''"))),
-        );
-
+        let escaped_exe = exe.display().to_string().replace(''', "''");
+        let escaped_payload = payload.replace(''', "''");
         let script = format!(
-            "Start-Process -FilePath '{}' -ArgumentList @({}) -Verb RunAs -WindowStyle Hidden -Wait",
-            escaped_exe,
-            argument_literals.join(",")
+            "Start-Process -FilePath '{}' -ArgumentList @('config','apply-ui','{}') -Verb RunAs -WindowStyle Hidden -Wait",
+            escaped_exe, escaped_payload
         );
 
         match hidden_command("powershell.exe")
@@ -536,7 +519,8 @@ impl SentinelApp {
         {
             Ok(status) if status.success() => {
                 self.status_text =
-                    "Protection settings applied; service restart requested.".to_string();
+                    "Protection settings and exclusions applied; service restart requested."
+                        .to_string();
                 self.last_service_refresh = Instant::now() - Duration::from_secs(10);
                 self.refresh_service_state();
                 self.load_service_preferences();
@@ -1639,6 +1623,16 @@ impl SentinelApp {
                 &mut self.protection_preferences.enable_scheduled_scan,
                 "Scheduled background scan",
             );
+            ui.horizontal(|ui| {
+                ui.label("Scheduled scan interval:");
+                ui.add(
+                    egui::DragValue::new(
+                        &mut self.protection_preferences.scheduled_scan_interval_minutes,
+                    )
+                    .range(15..=10080)
+                    .suffix(" min"),
+                );
+            });
             ui.checkbox(
                 &mut self.protection_preferences.auto_quarantine,
                 "Automatically quarantine confirmed malware",
@@ -1664,6 +1658,137 @@ impl SentinelApp {
             ui.label(
                 egui::RichText::new(
                     "Minifilter can only become Active when a built and appropriately signed driver is installed.",
+                )
+                .size(11.0)
+                .color(ui.visuals().weak_text_color()),
+            );
+        });
+
+        ui.add_space(14.0);
+
+        settings_card(ui, "Exclusions", |ui| {
+            ui.label(
+                egui::RichText::new(
+                    "Excluded paths, extensions and processes are ignored by real-time and behavior protection.",
+                )
+                .color(ui.visuals().weak_text_color()),
+            );
+            ui.add_space(6.0);
+
+            ui.horizontal(|ui| {
+                if fluent_button(ui, "Add folder exclusion", false).clicked() {
+                    if let Some(path) = rfd::FileDialog::new().pick_folder() {
+                        if !self
+                            .protection_preferences
+                            .excluded_paths
+                            .iter()
+                            .any(|item| item == &path)
+                        {
+                            self.protection_preferences.excluded_paths.push(path);
+                        }
+                    }
+                }
+            });
+
+            let mut remove_path = None;
+            for (index, path) in self
+                .protection_preferences
+                .excluded_paths
+                .iter()
+                .enumerate()
+            {
+                ui.horizontal(|ui| {
+                    ui.label(path.display().to_string());
+                    if ui.small_button("Remove").clicked() {
+                        remove_path = Some(index);
+                    }
+                });
+            }
+            if let Some(index) = remove_path {
+                self.protection_preferences.excluded_paths.remove(index);
+            }
+
+            ui.separator();
+            ui.horizontal(|ui| {
+                ui.label("Extension:");
+                ui.text_edit_singleline(&mut self.new_excluded_extension);
+                if ui.button("Add").clicked() {
+                    let ext = self
+                        .new_excluded_extension
+                        .trim()
+                        .trim_start_matches('.')
+                        .to_ascii_lowercase();
+                    if !ext.is_empty()
+                        && !self
+                            .protection_preferences
+                            .excluded_extensions
+                            .iter()
+                            .any(|item| item.eq_ignore_ascii_case(&ext))
+                    {
+                        self.protection_preferences.excluded_extensions.push(ext);
+                    }
+                    self.new_excluded_extension.clear();
+                }
+            });
+
+            let mut remove_ext = None;
+            for (index, ext) in self
+                .protection_preferences
+                .excluded_extensions
+                .iter()
+                .enumerate()
+            {
+                ui.horizontal(|ui| {
+                    ui.label(format!(".{ext}"));
+                    if ui.small_button("Remove").clicked() {
+                        remove_ext = Some(index);
+                    }
+                });
+            }
+            if let Some(index) = remove_ext {
+                self.protection_preferences.excluded_extensions.remove(index);
+            }
+
+            ui.separator();
+            ui.horizontal(|ui| {
+                ui.label("Process:");
+                ui.text_edit_singleline(&mut self.new_excluded_process);
+                if ui.button("Add").clicked() {
+                    let process = self.new_excluded_process.trim().to_ascii_lowercase();
+                    if !process.is_empty()
+                        && !self
+                            .protection_preferences
+                            .excluded_processes
+                            .iter()
+                            .any(|item| item.eq_ignore_ascii_case(&process))
+                    {
+                        self.protection_preferences.excluded_processes.push(process);
+                    }
+                    self.new_excluded_process.clear();
+                }
+            });
+
+            let mut remove_process = None;
+            for (index, process) in self
+                .protection_preferences
+                .excluded_processes
+                .iter()
+                .enumerate()
+            {
+                ui.horizontal(|ui| {
+                    ui.label(process);
+                    if ui.small_button("Remove").clicked() {
+                        remove_process = Some(index);
+                    }
+                });
+            }
+            if let Some(index) = remove_process {
+                self.protection_preferences.excluded_processes.remove(index);
+            }
+
+            ui.label(
+                egui::RichText::new(
+                    "Exclusions are applied only after pressing Apply & restart protection above.",
                 )
                 .size(11.0)
                 .color(ui.visuals().weak_text_color()),
