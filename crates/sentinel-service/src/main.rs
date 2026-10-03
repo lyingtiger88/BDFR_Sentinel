@@ -10,7 +10,7 @@ use sentinel_memory::executable_writable_regions;
 use sentinel_minifilter_client::{MinifilterBroker, MinifilterDecision};
 use sentinel_pe::PeAnalyzerEngine;
 use sentinel_quarantine::QuarantineStore;
-use sentinel_ransomware::RansomwareShield;
+use sentinel_ransomware::RansomwareMonitor;
 use sentinel_realtime::{RealtimeConfig, RealtimeMonitor};
 use sentinel_reputation::{ReputationDatabase, ReputationEngine};
 use sentinel_telemetry::{
@@ -700,6 +700,53 @@ fn run_service() -> Result<()> {
         None
     };
 
+    let ransomware_monitor = if config.enable_ransomware_shield {
+        let paths = config.watch_paths.clone();
+        let excluded = config.excluded_paths.clone();
+        match RansomwareMonitor::start(&paths, excluded, move |path, assessment| {
+            let action = if assessment.malicious {
+                "block-alert"
+            } else {
+                "suspicious"
+            };
+            record_threat_event(
+                "ransomware-shield",
+                action,
+                &path,
+                format!(
+                    "changes={}, dirs={}, extensions={}",
+                    assessment.recent_changes,
+                    assessment.unique_directories,
+                    assessment.unique_extensions
+                ),
+            );
+
+            if assessment.malicious {
+                error!(
+                    path = %path.display(),
+                    changes = assessment.recent_changes,
+                    directories = assessment.unique_directories,
+                    extensions = assessment.unique_extensions,
+                    "ransomware-style mass file modification detected"
+                );
+            } else {
+                warn!(
+                    path = %path.display(),
+                    changes = assessment.recent_changes,
+                    "suspicious burst of file modifications detected"
+                );
+            }
+        }) {
+            Ok(monitor) => Some(monitor),
+            Err(err) => {
+                warn!(error = %err, "ransomware shield could not start");
+                None
+            }
+        }
+    } else {
+        None
+    };
+
     let policy_scanner = Arc::clone(&scanner);
     let policy_quarantine = config.quarantine_dir.clone();
     let policy_auto_quarantine = config.auto_quarantine;
@@ -1033,6 +1080,88 @@ fn run_service() -> Result<()> {
         None
     };
 
+    let scheduled_stop = Arc::new(AtomicBool::new(false));
+    let scheduled_stop_worker = Arc::clone(&scheduled_stop);
+    let scheduled_scanner = Arc::clone(&scanner);
+    let scheduled_config = config.clone();
+    let scheduled_scan_thread = if config.enable_scheduled_scan {
+        thread::Builder::new()
+            .name("bdfr-sentinel-scheduled-scan".to_string())
+            .spawn(move || {
+                let interval = Duration::from_secs(
+                    scheduled_config
+                        .scheduled_scan_interval_minutes
+                        .max(1)
+                        .saturating_mul(60),
+                );
+
+                while !scheduled_stop_worker.load(Ordering::Relaxed) {
+                    let mut slept = Duration::ZERO;
+                    while slept < interval && !scheduled_stop_worker.load(Ordering::Relaxed) {
+                        let slice = Duration::from_secs(1).min(interval - slept);
+                        thread::sleep(slice);
+                        slept += slice;
+                    }
+                    if scheduled_stop_worker.load(Ordering::Relaxed) {
+                        break;
+                    }
+
+                    for root in &scheduled_config.watch_paths {
+                        if !root.exists() {
+                            continue;
+                        }
+
+                        for entry in WalkDir::new(root).follow_links(false).into_iter().filter_map(Result::ok) {
+                            if scheduled_stop_worker.load(Ordering::Relaxed) {
+                                break;
+                            }
+                            if !entry.file_type().is_file() {
+                                continue;
+                            }
+
+                            let path = entry.path();
+                            if is_path_excluded(
+                                path,
+                                &scheduled_config.excluded_paths,
+                                &scheduled_config.excluded_extensions,
+                            ) || !is_preexecution_candidate(path)
+                            {
+                                continue;
+                            }
+
+                            match scheduled_scanner.scan_file(path) {
+                                Ok(report) if report.verdict.level == ThreatLevel::Malicious => {
+                                    record_threat_event(
+                                        "scheduled-scan",
+                                        "detect",
+                                        path,
+                                        "scheduled scan found malware",
+                                    );
+
+                                    if scheduled_config.auto_quarantine {
+                                        let _ = QuarantineStore::open(&scheduled_config.quarantine_dir)
+                                            .and_then(|store| {
+                                                store.quarantine_file(
+                                                    path,
+                                                    "malware detected by scheduled scan",
+                                                )
+                                            });
+                                    }
+                                }
+                                Ok(_) => {}
+                                Err(err) => {
+                                    warn!(path = %path.display(), error = %err, "scheduled scan skipped file");
+                                }
+                            }
+                        }
+                    }
+                }
+            })
+            .ok()
+    } else {
+        None
+    };
+
     let update_stop = Arc::new(AtomicBool::new(false));
     let update_stop_worker = Arc::clone(&update_stop);
     let update_config = config.clone();
@@ -1093,10 +1222,19 @@ fn run_service() -> Result<()> {
         process_id: None,
     })?;
 
-    info!("BDFR Sentinel real-time protection service started");
+    info!(
+        ransomware_shield = ransomware_monitor.is_some(),
+        scheduled_scan = scheduled_scan_thread.is_some(),
+        "BDFR Sentinel real-time protection service started"
+    );
 
     while !stopped.load(Ordering::Relaxed) {
         thread::sleep(Duration::from_secs(1));
+    }
+
+    scheduled_stop.store(true, Ordering::Relaxed);
+    if let Some(handle) = scheduled_scan_thread {
+        let _ = handle.join();
     }
 
     update_stop.store(true, Ordering::Relaxed);
