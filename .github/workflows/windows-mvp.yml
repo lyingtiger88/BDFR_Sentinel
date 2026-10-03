@@ -84,6 +84,26 @@ jobs:
             throw "Protection service did not reach Running state"
           }
 
+          $statusPath = Join-Path $env:ProgramData "BDFR\Sentinel\status.json"
+          $firewallActive = $false
+          for ($i = 0; $i -lt 20; $i++) {
+            Start-Sleep -Milliseconds 250
+            if (Test-Path $statusPath) {
+              try {
+                $snapshot = Get-Content $statusPath -Raw | ConvertFrom-Json
+                if ([bool]$snapshot.network_protection_active -and $snapshot.firewall_mode -eq "smart") {
+                  $firewallActive = $true
+                  break
+                }
+              } catch {}
+            }
+          }
+          if (-not $firewallActive) {
+            & $service stop 2>$null
+            & $service uninstall 2>$null
+            throw "WFP kernel firewall did not activate"
+          }
+
           & $service config apply-restart realtime_file_monitor=false
           if ($LASTEXITCODE -ne 0) {
             & $service stop 2>$null
@@ -92,7 +112,6 @@ jobs:
           }
 
           $realtimeOff = $false
-          $statusPath = Join-Path $env:ProgramData "BDFR\Sentinel\status.json"
           for ($i = 0; $i -lt 30; $i++) {
             Start-Sleep -Milliseconds 500
             if (Test-Path $statusPath) {
