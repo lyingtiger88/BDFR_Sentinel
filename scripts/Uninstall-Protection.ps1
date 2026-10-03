@@ -23,6 +23,13 @@ $serviceExe = if (Test-Path $installedService) { $installedService } else { $fal
 Write-Host "Stopping minifilter if present..."
 fltmc.exe unload BDFRSentinelFilter 2>$null | Out-Host
 
+Write-Host "Removing BDFR Sentinel network firewall rules..."
+for ($i = 0; $i -lt 64; $i++) {
+    netsh.exe advfirewall firewall delete rule name="BDFR Sentinel Network Block v4-$i" 2>$null | Out-Null
+    netsh.exe advfirewall firewall delete rule name="BDFR Sentinel Network Block v6-$i" 2>$null | Out-Null
+}
+
+
 if (Test-Path $serviceExe) {
     Write-Host "Stopping BDFR Sentinel service..."
     & $serviceExe stop 2>$null
