@@ -7,3 +7,6 @@ license.workspace = true
 [dependencies]
 ipnet.workspace = true
 tracing.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+wfp.workspace = true
