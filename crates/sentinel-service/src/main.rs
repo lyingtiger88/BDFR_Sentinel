@@ -10,7 +10,7 @@ use sentinel_definitions::{ClamHashDatabase, HashDefinitionEngine};
 use sentinel_etw::EtwProcessTelemetry;
 use sentinel_memory::executable_writable_regions;
 use sentinel_minifilter_client::{MinifilterBroker, MinifilterDecision};
-use sentinel_network::{apply_windows_firewall_blocklist, NetworkBlocklist};
+use sentinel_network::{ApplicationRule, FirewallMode, FirewallPolicy, KernelFirewall, NetworkBlocklist};
 use sentinel_pe::PeAnalyzerEngine;
 use sentinel_quarantine::QuarantineStore;
 use sentinel_ransomware::RansomwareMonitor;
@@ -62,6 +62,10 @@ struct ServiceConfig {
     reputation_db_path: Option<PathBuf>,
     #[serde(default)]
     network_blocklist_path: Option<PathBuf>,
+    #[serde(default)]
+    firewall_mode: FirewallMode,
+    #[serde(default)]
+    firewall_application_rules: Vec<ApplicationRule>,
     #[serde(default)]
     excluded_paths: Vec<PathBuf>,
     #[serde(default)]
@@ -157,6 +161,8 @@ impl ServiceConfig {
                     .join("Definitions")
                     .join("network-blocklist.txt"),
             ),
+            firewall_mode: FirewallMode::Smart,
+            firewall_application_rules: Vec::new(),
             excluded_paths: vec![program_data.join("Quarantine")],
             excluded_extensions: Vec::new(),
             excluded_processes: Vec::new(),
@@ -619,25 +625,42 @@ fn run_service() -> Result<()> {
         config.reputation_db_path.as_deref(),
     )?);
 
-    let network_report = if config.enable_network_protection {
-        config.network_blocklist_path.as_deref().and_then(|path| {
-            match NetworkBlocklist::load(path) {
-                Ok(blocklist) if !blocklist.is_empty() => {
-                    let report = apply_windows_firewall_blocklist(&blocklist);
-                    info!(
-                        entries = report.loaded_entries,
-                        rules = report.applied_rules,
-                        "network protection blocklist applied"
-                    );
-                    Some(report)
-                }
-                Ok(_) => None,
+    let kernel_firewall = if config.enable_network_protection {
+        let blocklist = match config.network_blocklist_path.as_deref() {
+            Some(path) => match NetworkBlocklist::load(path) {
+                Ok(blocklist) => blocklist,
                 Err(err) => {
                     warn!(path = %path.display(), error = %err, "network blocklist load failed");
-                    None
+                    NetworkBlocklist::default()
                 }
+            },
+            None => NetworkBlocklist::default(),
+        };
+
+        let policy = FirewallPolicy {
+            mode: config.firewall_mode,
+            application_rules: config.firewall_application_rules.clone(),
+            allow_loopback: true,
+        };
+
+        match KernelFirewall::install(&blocklist, &policy) {
+            Ok(firewall) => {
+                let report = firewall.report();
+                info!(
+                    entries = report.loaded_entries,
+                    filters = report.applied_filters,
+                    app_rules = report.application_rules,
+                    mode = ?report.mode,
+                    backend = %report.backend,
+                    "WFP kernel firewall activated"
+                );
+                Some(firewall)
             }
-        })
+            Err(err) => {
+                error!(error = %err, "failed to activate WFP kernel firewall");
+                None
+            }
+        }
     } else {
         None
     };
@@ -1355,6 +1378,7 @@ fn run_service() -> Result<()> {
         minifilter_broker.is_some(),
         process_telemetry.is_some() || registry_telemetry.is_some() || etw_process.is_some(),
         update_thread.is_some(),
+        kernel_firewall.is_some(),
     );
 
     status_handle.set_service_status(ServiceStatus {
@@ -1370,7 +1394,8 @@ fn run_service() -> Result<()> {
     info!(
         ransomware_shield = ransomware_monitor.is_some(),
         usb_protection = usb_monitor.is_some(),
-        network_protection = network_report.is_some(),
+        network_protection = kernel_firewall.is_some(),
+        firewall_mode = ?config.firewall_mode,
         scheduled_scan = scheduled_scan_thread.is_some(),
         "BDFR Sentinel real-time protection service started"
     );
@@ -1405,7 +1430,18 @@ fn run_service() -> Result<()> {
         monitor.stop();
     }
     write_status_snapshot(
-        &config, "stopped", false, false, false, false, false, false, false, false, false,
+        &config,
+        "stopped",
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
     );
 
     status_handle.set_service_status(ServiceStatus {
@@ -2137,6 +2173,7 @@ fn write_status_snapshot(
     minifilter_connected: bool,
     behavior_active: bool,
     definition_updates_active: bool,
+    network_protection_active: bool,
 ) {
     let snapshot = StatusSnapshot {
         service: SERVICE_NAME,
@@ -2160,11 +2197,7 @@ fn write_status_snapshot(
         ransomware_active: config.enable_ransomware_shield,
         scheduled_scan_active: config.enable_scheduled_scan,
         usb_protection_active: config.enable_usb_protection,
-        network_protection_active: config.enable_network_protection
-            && config
-                .network_blocklist_path
-                .as_deref()
-                .is_some_and(Path::is_file),
+        network_protection_active,
     };
 
     if let Ok(bytes) = serde_json::to_vec_pretty(&snapshot) {
