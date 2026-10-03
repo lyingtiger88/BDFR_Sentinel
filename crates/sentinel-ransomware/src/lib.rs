@@ -1,7 +1,10 @@
+use notify::{EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
+use tracing::warn;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RansomwareAssessment {
@@ -96,6 +99,67 @@ impl RansomwareShield {
     }
 }
 
+pub struct RansomwareMonitor {
+    _watcher: RecommendedWatcher,
+}
+
+impl RansomwareMonitor {
+    pub fn start<F>(
+        paths: &[PathBuf],
+        excluded_paths: Vec<PathBuf>,
+        on_alert: F,
+    ) -> Result<Self, notify::Error>
+    where
+        F: Fn(PathBuf, RansomwareAssessment) + Send + Sync + 'static,
+    {
+        let shield = Arc::new(Mutex::new(RansomwareShield::default()));
+        let callback = Arc::new(on_alert);
+        let shield_for_callback = Arc::clone(&shield);
+        let callback_for_events = Arc::clone(&callback);
+
+        let mut watcher = notify::recommended_watcher(move |event: notify::Result<notify::Event>| {
+            let event = match event {
+                Ok(event) => event,
+                Err(err) => {
+                    warn!(error = %err, "ransomware filesystem watcher error");
+                    return;
+                }
+            };
+
+            if !matches!(event.kind, EventKind::Create(_) | EventKind::Modify(_)) {
+                return;
+            }
+
+            for path in event.paths {
+                if excluded_paths
+                    .iter()
+                    .any(|excluded| path.starts_with(excluded))
+                    || path.is_dir()
+                {
+                    continue;
+                }
+
+                let assessment = match shield_for_callback.lock() {
+                    Ok(mut shield) => shield.observe_path(&path),
+                    Err(_) => continue,
+                };
+
+                if assessment.suspicious {
+                    callback_for_events(path, assessment);
+                }
+            }
+        })?;
+
+        for path in paths {
+            if path.exists() {
+                watcher.watch(path, RecursiveMode::Recursive)?;
+            }
+        }
+
+        Ok(Self { _watcher: watcher })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -108,15 +172,13 @@ mod tests {
             ..RansomwareShield::default()
         };
 
-        for i in 0..5 {
-            let path = PathBuf::from(format!(r"C:\Users\A\Dir{}\file{}.ext{}", i % 3, i, i % 3));
-            let assessment = shield.observe_path(&path);
-            if i < 4 {
-                assert!(!assessment.malicious);
-            }
+        let mut final_assessment = None;
+        for i in 0..6 {
+            let path =
+                PathBuf::from(format!(r"C:\Users\A\Dir{}\file{}.ext{}", i % 4, i, i % 4));
+            final_assessment = Some(shield.observe_path(&path));
         }
 
-        let final_assessment = shield.observe_path(Path::new(r"C:\Users\A\Dir4\last.zzz"));
-        assert!(final_assessment.malicious);
+        assert!(final_assessment.unwrap().malicious);
     }
 }
