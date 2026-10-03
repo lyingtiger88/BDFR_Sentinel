@@ -134,6 +134,8 @@ struct UiProtectionSettings {
     enable_network_protection: bool,
     #[serde(default)]
     firewall_mode: FirewallMode,
+    #[serde(default)]
+    firewall_application_rules: Vec<ApplicationRule>,
     enable_scheduled_scan: bool,
     auto_quarantine: bool,
     scheduled_scan_interval_minutes: u64,
@@ -2034,6 +2036,7 @@ fn config_command(args: Vec<String>) -> Result<()> {
             config.enable_usb_protection = settings.enable_usb_protection;
             config.enable_network_protection = settings.enable_network_protection;
             config.firewall_mode = settings.firewall_mode;
+            config.firewall_application_rules = settings.firewall_application_rules;
             config.enable_scheduled_scan = settings.enable_scheduled_scan;
             config.auto_quarantine = settings.auto_quarantine;
             config.scheduled_scan_interval_minutes =
