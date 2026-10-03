@@ -6,7 +6,9 @@ use base64::Engine as _;
 use eframe::egui;
 use sentinel_core::{EngineRegistry, FileScanner, ScanReport, ScannerConfig, ThreatLevel};
 use sentinel_definitions::{ClamHashDatabase, HashDefinitionEngine};
-use sentinel_network::{ApplicationRule, FirewallAction, FirewallDirection, FirewallMode, FirewallProtocol};
+use sentinel_network::{
+    ApplicationRule, FirewallAction, FirewallDirection, FirewallMode, FirewallProtocol,
+};
 use sentinel_pe::PeAnalyzerEngine;
 use sentinel_quarantine::{QuarantineEntry, QuarantineStore};
 use serde::{Deserialize, Serialize};
