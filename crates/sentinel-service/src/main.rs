@@ -193,7 +193,7 @@ fn install_service() -> Result<()> {
             "BDFR Sentinel always-on real-time file protection and quarantine service.",
         )?;
         ensure_config_exists()?;
-        configure_service_recovery();
+        configure_service_hardening();
         println!("{SERVICE_DISPLAY_NAME} is already installed");
         return Ok(());
     }
@@ -221,40 +221,58 @@ fn install_service() -> Result<()> {
     )?;
 
     ensure_config_exists()?;
-    configure_service_recovery();
+    configure_service_hardening();
     println!("Installed {SERVICE_DISPLAY_NAME}");
     Ok(())
 }
 
-fn configure_service_recovery() {
-    let failure = Command::new("sc.exe")
-        .args([
+fn configure_service_hardening() {
+    let run_sc = |args: &[&str], warning: &str| {
+        match Command::new("sc.exe").args(args).status() {
+            Ok(status) if status.success() => {}
+            Ok(_) => warn!("{warning}"),
+            Err(err) => warn!(error = %err, "{warning}"),
+        }
+    };
+
+    // Restart quickly after an unexpected process termination. Administrators can
+    // still stop/uninstall the service through the normal SCM path.
+    run_sc(
+        &[
             "failure",
             SERVICE_NAME,
             "reset=",
             "86400",
             "actions=",
-            "restart/5000/restart/15000/restart/60000",
-        ])
-        .status();
+            "restart/1000/restart/5000/restart/15000",
+        ],
+        "could not configure Windows service restart actions",
+    );
+    run_sc(
+        &["failureflag", SERVICE_NAME, "1"],
+        "could not enable service failure actions for non-crash exits",
+    );
 
-    if let Ok(status) = failure {
-        if !status.success() {
-            warn!("could not configure Windows service restart actions");
-        }
-    } else {
-        warn!("sc.exe was unavailable while configuring service recovery");
-    }
+    // Give the service its own Windows service SID so Sentinel-owned resources
+    // can later be ACL'd to SYSTEM + Administrators + the Sentinel service.
+    run_sc(
+        &["sidtype", SERVICE_NAME, "unrestricted"],
+        "could not enable the BDFR Sentinel service SID",
+    );
 
-    let failure_flag = Command::new("sc.exe")
-        .args(["failureflag", SERVICE_NAME, "1"])
-        .status();
+    // Service DACL:
+    // - SYSTEM and BUILTIN\Administrators: full service control.
+    // - Interactive/Service users: query/interrogate only, no STOP/DELETE/CHANGE_CONFIG.
+    //
+    // This prevents ordinary users from disabling protection while preserving an
+    // explicit administrative recovery/uninstall path.
+    const SERVICE_SDDL: &str =
+        "D:(A;;CCDCLCSWRPWPDTLOCRSDRCWDWO;;;SY)(A;;CCDCLCSWRPWPDTLOCRSDRCWDWO;;;BA)(A;;CCLCSWLOCRRC;;;IU)(A;;CCLCSWLOCRRC;;;SU)";
 
-    if let Ok(status) = failure_flag {
-        if !status.success() {
-            warn!("could not enable service failure actions for non-crash exits");
-        }
-    }
+    run_sc(
+        &["sdset", SERVICE_NAME, SERVICE_SDDL],
+        "could not harden the BDFR Sentinel service ACL",
+    );
 }
 
 fn uninstall_service() -> Result<()> {
