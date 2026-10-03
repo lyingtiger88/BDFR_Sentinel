@@ -29,3 +29,5 @@ sentinel-memory = { path = "../sentinel-memory" }
 sentinel-etw = { path = "../sentinel-etw" }
 sentinel-minifilter-client = { path = "../sentinel-minifilter-client" }
 sentinel-yara = { path = "../sentinel-yara" }
+sentinel-reputation = { path = "../sentinel-reputation" }
+sentinel-ransomware = { path = "../sentinel-ransomware" }
