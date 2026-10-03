@@ -1,7 +1,11 @@
-use crate::{DetectionPolicy, EngineRegistry, FileMetadata, ScanContext, ScanError, ScanReport};
+use crate::{
+    Detection, DetectionCategory, DetectionKind, DetectionPolicy, EngineRegistry, FileMetadata,
+    ScanContext, ScanError, ScanReport, ThreatLevel,
+};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::fs;
+use std::io::{Cursor, Read};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::{Duration, Instant, SystemTime};
@@ -12,6 +16,11 @@ pub struct ScannerConfig {
     pub policy: DetectionPolicy,
     pub cache_capacity: usize,
     pub cache_ttl: Duration,
+    pub archive_scan_enabled: bool,
+    pub archive_max_depth: usize,
+    pub archive_max_entries: usize,
+    pub archive_max_entry_size: u64,
+    pub archive_max_total_size: u64,
 }
 
 impl Default for ScannerConfig {
@@ -21,6 +30,11 @@ impl Default for ScannerConfig {
             policy: DetectionPolicy::default(),
             cache_capacity: 4096,
             cache_ttl: Duration::from_secs(30),
+            archive_scan_enabled: true,
+            archive_max_depth: 3,
+            archive_max_entries: 512,
+            archive_max_entry_size: 64 * 1024 * 1024,
+            archive_max_total_size: 256 * 1024 * 1024,
         }
     }
 }
@@ -77,23 +91,7 @@ impl FileScanner {
 
         let data = fs::read(path)?;
         let sha256 = hex_sha256(&data);
-
-        let context = ScanContext {
-            data: &data,
-            sha256: &sha256,
-        };
-
-        let mut detections = Vec::new();
-        for engine in self.engines.engines() {
-            let mut engine_detections =
-                engine
-                    .scan_context(&context)
-                    .map_err(|err| ScanError::Engine {
-                        engine: engine.name().to_string(),
-                        message: err.to_string(),
-                    })?;
-            detections.append(&mut engine_detections);
-        }
+        let detections = self.scan_bytes_recursive(&data, 0, path.display().to_string())?;
 
         let report = ScanReport {
             path: path.display().to_string(),
@@ -123,6 +121,147 @@ impl FileScanner {
 
         Ok(report)
     }
+
+    fn scan_bytes_recursive(
+        &self,
+        data: &[u8],
+        depth: usize,
+        label: String,
+    ) -> Result<Vec<Detection>, ScanError> {
+        let sha256 = hex_sha256(data);
+        let context = ScanContext {
+            data,
+            sha256: &sha256,
+        };
+
+        let mut detections = Vec::new();
+        for engine in self.engines.engines() {
+            let mut engine_detections =
+                engine
+                    .scan_context(&context)
+                    .map_err(|err| ScanError::Engine {
+                        engine: engine.name().to_string(),
+                        message: err.to_string(),
+                    })?;
+            detections.append(&mut engine_detections);
+        }
+
+        if !self.config.archive_scan_enabled
+            || depth >= self.config.archive_max_depth
+            || !looks_like_zip(data)
+        {
+            return Ok(detections);
+        }
+
+        let cursor = Cursor::new(data);
+        let Ok(mut archive) = zip::ZipArchive::new(cursor) else {
+            return Ok(detections);
+        };
+
+        if archive.len() > self.config.archive_max_entries {
+            detections.push(archive_limit_detection(
+                "ARCHIVE-ENTRIES-001",
+                format!(
+                    "archive entry limit exceeded: {} > {} ({label})",
+                    archive.len(),
+                    self.config.archive_max_entries
+                ),
+            ));
+            return Ok(detections);
+        }
+
+        if archive
+            .decompressed_size()
+            .is_some_and(|size| size > self.config.archive_max_total_size as u128)
+        {
+            detections.push(archive_limit_detection(
+                "ARCHIVE-SIZE-001",
+                format!(
+                    "archive expanded-size limit exceeded: > {} bytes ({label})",
+                    self.config.archive_max_total_size
+                ),
+            ));
+            return Ok(detections);
+        }
+
+        let mut expanded_total = 0u64;
+
+        for index in 0..archive.len() {
+            let Ok(mut entry) = archive.by_index(index) else {
+                continue;
+            };
+
+            let entry_name = entry.name().to_string();
+            if entry_name.ends_with('/') {
+                continue;
+            }
+
+            let declared_size = entry.size();
+            if declared_size > self.config.archive_max_entry_size {
+                detections.push(archive_limit_detection(
+                    "ARCHIVE-ENTRY-SIZE-001",
+                    format!(
+                        "archive entry too large: {entry_name} ({declared_size} bytes)"
+                    ),
+                ));
+                continue;
+            }
+
+            expanded_total = expanded_total.saturating_add(declared_size);
+            if expanded_total > self.config.archive_max_total_size {
+                detections.push(archive_limit_detection(
+                    "ARCHIVE-TOTAL-SIZE-001",
+                    format!(
+                        "archive expanded-size budget exceeded while reading {entry_name}"
+                    ),
+                ));
+                break;
+            }
+
+            let mut entry_data = Vec::with_capacity(declared_size.min(1024 * 1024) as usize);
+            let mut limited = entry
+                .by_ref()
+                .take(self.config.archive_max_entry_size.saturating_add(1));
+            if limited.read_to_end(&mut entry_data).is_err()
+                || entry_data.len() as u64 > self.config.archive_max_entry_size
+            {
+                continue;
+            }
+
+            let nested_label = format!("{label}!{entry_name}");
+            let mut nested = self.scan_bytes_recursive(&entry_data, depth + 1, nested_label)?;
+            for detection in &mut nested {
+                let prefix = format!("archive_entry={entry_name}");
+                detection.details = Some(match detection.details.take() {
+                    Some(details) => format!("{prefix}; {details}"),
+                    None => prefix,
+                });
+            }
+            detections.append(&mut nested);
+        }
+
+        Ok(detections)
+    }
+}
+
+fn looks_like_zip(data: &[u8]) -> bool {
+    data.len() >= 4
+        && matches!(
+            &data[..4],
+            b"PK\x03\x04" | b"PK\x05\x06" | b"PK\x07\x08"
+        )
+}
+
+fn archive_limit_detection(rule_id: &str, details: String) -> Detection {
+    Detection {
+        engine: "archive-scanner".to_string(),
+        rule_id: Some(rule_id.to_string()),
+        kind: DetectionKind::Heuristic,
+        category: DetectionCategory::Unknown,
+        level: ThreatLevel::Suspicious,
+        title: "Archive safety limit reached".to_string(),
+        details: Some(details),
+    }
 }
 
 fn hex_sha256(data: &[u8]) -> String {
@@ -138,7 +277,7 @@ fn hex_sha256(data: &[u8]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{Detection, DetectionCategory, DetectionKind, ScanEngine, ThreatLevel};
+    use crate::ScanEngine;
     use std::io::Write;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
@@ -189,6 +328,37 @@ mod tests {
         assert_eq!(report.verdict.detections.len(), 1);
         assert_eq!(report.metadata.size, 16);
         assert_eq!(report.metadata.sha256.len(), 64);
+    }
+
+    #[test]
+    fn scans_payload_inside_zip_archive() {
+        let temp = std::env::temp_dir().join(format!(
+            "bdfr-sentinel-archive-test-{}.zip",
+            std::process::id()
+        ));
+
+        {
+            let file = fs::File::create(&temp).unwrap();
+            let mut writer = zip::ZipWriter::new(file);
+            writer
+                .start_file("payload.bin", zip::write::SimpleFileOptions::default())
+                .unwrap();
+            writer.write_all(b"inside EVIL payload").unwrap();
+            writer.finish().unwrap();
+        }
+
+        let mut registry = EngineRegistry::new();
+        registry.register(TestEngine);
+        let scanner = FileScanner::new(ScannerConfig::default(), registry);
+        let report = scanner.scan_file(&temp).unwrap();
+
+        let _ = fs::remove_file(&temp);
+        assert_eq!(report.verdict.level, ThreatLevel::Malicious);
+        assert!(report
+            .verdict
+            .detections
+            .iter()
+            .any(|d| d.details.as_deref().is_some_and(|v| v.contains("payload.bin"))));
     }
 
     #[test]
