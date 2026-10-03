@@ -227,7 +227,7 @@ fn classify_event(kind: &EventKind) -> Option<MonitorEventKind> {
 }
 
 fn file_fingerprint(config: &RealtimeConfig, path: &Path) -> Option<FileFingerprint> {
-    if !config.accepts_extension(path) {
+    if config.is_excluded(path) || !config.accepts_extension(path) {
         return None;
     }
 
