@@ -130,6 +130,8 @@ struct UiProtectionSettings {
     enable_ransomware_shield: bool,
     enable_usb_protection: bool,
     enable_network_protection: bool,
+    #[serde(default)]
+    firewall_mode: FirewallMode,
     enable_scheduled_scan: bool,
     auto_quarantine: bool,
     scheduled_scan_interval_minutes: u64,
@@ -220,6 +222,7 @@ struct StatusSnapshot {
     scheduled_scan_active: bool,
     usb_protection_active: bool,
     network_protection_active: bool,
+    firewall_mode: FirewallMode,
 }
 
 #[derive(Debug, Serialize)]
@@ -2039,6 +2042,7 @@ fn config_command(args: Vec<String>) -> Result<()> {
             config.enable_ransomware_shield = settings.enable_ransomware_shield;
             config.enable_usb_protection = settings.enable_usb_protection;
             config.enable_network_protection = settings.enable_network_protection;
+            config.firewall_mode = settings.firewall_mode;
             config.enable_scheduled_scan = settings.enable_scheduled_scan;
             config.auto_quarantine = settings.auto_quarantine;
             config.scheduled_scan_interval_minutes =
@@ -2198,6 +2202,7 @@ fn write_status_snapshot(
         scheduled_scan_active: config.enable_scheduled_scan,
         usb_protection_active: config.enable_usb_protection,
         network_protection_active,
+        firewall_mode: config.firewall_mode,
     };
 
     if let Ok(bytes) = serde_json::to_vec_pretty(&snapshot) {
