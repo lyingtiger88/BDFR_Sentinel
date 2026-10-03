@@ -575,6 +575,7 @@ fn run_service() -> Result<()> {
         config.hdb_path.as_deref(),
         config.hsb_path.as_deref(),
         config.yara_rules_dir.as_deref(),
+        config.reputation_db_path.as_deref(),
     )?);
 
     let realtime_config = RealtimeConfig {
@@ -1142,6 +1143,7 @@ fn run_protection_loop() -> Result<()> {
         config.hdb_path.as_deref(),
         config.hsb_path.as_deref(),
         config.yara_rules_dir.as_deref(),
+        config.reputation_db_path.as_deref(),
     )?);
     let quarantine_dir = config.quarantine_dir.clone();
     let auto_quarantine = config.auto_quarantine;
@@ -1237,6 +1239,7 @@ fn build_scanner(
     hdb_path: Option<&Path>,
     hsb_path: Option<&Path>,
     yara_rules_dir: Option<&Path>,
+    reputation_db_path: Option<&Path>,
 ) -> Result<FileScanner> {
     let mut registry = EngineRegistry::new();
     registry.register(PeAnalyzerEngine);
@@ -1272,6 +1275,19 @@ fn build_scanner(
             }
             Err(err) => {
                 warn!(path = %path.display(), error = %err, "YARA-X rule compilation failed");
+            }
+        }
+    }
+
+    if let Some(path) = reputation_db_path {
+        match ReputationDatabase::load_jsonl(path) {
+            Ok(db) if !db.is_empty() => {
+                info!(records = db.len(), path = %path.display(), "loaded local reputation database");
+                registry.register(ReputationEngine::new(db));
+            }
+            Ok(_) => {}
+            Err(err) => {
+                warn!(path = %path.display(), error = %err, "reputation database load failed");
             }
         }
     }
