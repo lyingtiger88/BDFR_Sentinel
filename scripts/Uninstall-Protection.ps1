@@ -1,3 +1,8 @@
+param(
+    [string]$InstallDir = (Join-Path $env:ProgramFiles "BDFR Sentinel"),
+    [switch]$KeepData
+)
+
 $ErrorActionPreference = "Continue"
 
 function Assert-Admin {
@@ -10,8 +15,10 @@ function Assert-Admin {
 
 Assert-Admin
 
-$root = Split-Path -Parent $MyInvocation.MyCommand.Path
-$serviceExe = Join-Path $root "bdfr-sentinel-service.exe"
+$sourceRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
+$installedService = Join-Path $InstallDir "bdfr-sentinel-service.exe"
+$fallbackService = Join-Path $sourceRoot "bdfr-sentinel-service.exe"
+$serviceExe = if (Test-Path $installedService) { $installedService } else { $fallbackService }
 
 Write-Host "Stopping minifilter if present..."
 fltmc.exe unload BDFRSentinelFilter 2>$null | Out-Host
@@ -21,7 +28,28 @@ if (Test-Path $serviceExe) {
     & $serviceExe stop 2>$null
 
     Write-Host "Removing BDFR Sentinel service..."
-    & $serviceExe uninstall
+    & $serviceExe uninstall 2>$null
+}
+else {
+    sc.exe stop BDFRSentinel 2>$null | Out-Null
+    sc.exe delete BDFRSentinel 2>$null | Out-Null
+}
+
+$shortcut = Join-Path $env:ProgramData "Microsoft\Windows\Start Menu\Programs\BDFR Sentinel.lnk"
+Remove-Item $shortcut -Force -ErrorAction SilentlyContinue
+
+if (Test-Path $InstallDir) {
+    Remove-Item $InstallDir -Recurse -Force -ErrorAction SilentlyContinue
+}
+
+if (-not $KeepData) {
+    $programData = Join-Path $env:ProgramData "BDFR\Sentinel"
+    if (Test-Path $programData) {
+        # Restore administrator ownership/access before deleting hardened data.
+        takeown.exe /F $programData /R /D Y | Out-Null
+        icacls.exe $programData /grant "Administrators:(OI)(CI)F" /T /C | Out-Null
+        Remove-Item $programData -Recurse -Force -ErrorAction SilentlyContinue
+    }
 }
 
 Write-Host "BDFR Sentinel protection components removed."
