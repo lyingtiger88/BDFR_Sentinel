@@ -1,4 +1,6 @@
 use anyhow::{Context, Result};
+use base64::engine::general_purpose::STANDARD as BASE64;
+use base64::Engine as _;
 use sentinel_amsi::{AmsiScanner, AmsiVerdict};
 use sentinel_behavior::{
     process_start_signals, BehaviorEngine, BehaviorSignal, BehaviorSignalKind,
@@ -101,6 +103,25 @@ fn default_scheduled_scan_interval_minutes() -> u64 {
 
 fn default_true() -> bool {
     true
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct UiProtectionSettings {
+    enable_realtime_file_monitor: bool,
+    enable_process_telemetry: bool,
+    enable_registry_telemetry: bool,
+    enable_memory_telemetry: bool,
+    enable_amsi: bool,
+    enable_etw: bool,
+    enable_minifilter: bool,
+    enable_definition_updates: bool,
+    enable_ransomware_shield: bool,
+    enable_scheduled_scan: bool,
+    auto_quarantine: bool,
+    scheduled_scan_interval_minutes: u64,
+    excluded_paths: Vec<PathBuf>,
+    excluded_extensions: Vec<String>,
+    excluded_processes: Vec<String>,
 }
 
 impl ServiceConfig {
@@ -1834,6 +1855,65 @@ fn config_command(args: Vec<String>) -> Result<()> {
             println!("Scheduled scan interval updated to {minutes} minute(s).");
             Ok(())
         }
+        [command, payload] if command == "apply-ui" => {
+            let raw = BASE64
+                .decode(payload)
+                .context("invalid base64 GUI settings payload")?;
+            let settings: UiProtectionSettings =
+                serde_json::from_slice(&raw).context("invalid GUI settings JSON")?;
+
+            let mut config = load_config()?;
+            config.enable_realtime_file_monitor = settings.enable_realtime_file_monitor;
+            config.enable_process_telemetry = settings.enable_process_telemetry;
+            config.enable_registry_telemetry = settings.enable_registry_telemetry;
+            config.enable_memory_telemetry = settings.enable_memory_telemetry;
+            config.enable_amsi = settings.enable_amsi;
+            config.enable_etw = settings.enable_etw;
+            config.enable_minifilter = settings.enable_minifilter;
+            config.enable_definition_updates = settings.enable_definition_updates;
+            config.enable_ransomware_shield = settings.enable_ransomware_shield;
+            config.enable_scheduled_scan = settings.enable_scheduled_scan;
+            config.auto_quarantine = settings.auto_quarantine;
+            config.scheduled_scan_interval_minutes =
+                settings.scheduled_scan_interval_minutes.max(1);
+            config.excluded_paths = settings.excluded_paths;
+            config.excluded_extensions = settings
+                .excluded_extensions
+                .into_iter()
+                .map(|value| value.trim_start_matches('.').to_ascii_lowercase())
+                .filter(|value| !value.is_empty())
+                .collect();
+            config.excluded_processes = settings
+                .excluded_processes
+                .into_iter()
+                .map(|value| value.to_ascii_lowercase())
+                .filter(|value| !value.is_empty())
+                .collect();
+
+            save_config(&config)?;
+
+            let manager =
+                ServiceManager::local_computer(None::<&str>, ServiceManagerAccess::CONNECT)?;
+            if let Ok(service) = manager.open_service(
+                SERVICE_NAME,
+                ServiceAccess::QUERY_STATUS | ServiceAccess::STOP | ServiceAccess::START,
+            ) {
+                let was_running = service.query_status()?.current_state != ServiceState::Stopped;
+                if was_running {
+                    let _ = service.stop();
+                    for _ in 0..40 {
+                        if service.query_status()?.current_state == ServiceState::Stopped {
+                            break;
+                        }
+                        thread::sleep(Duration::from_millis(250));
+                    }
+                    service.start(&[] as &[&str])?;
+                }
+            }
+
+            println!("GUI protection settings applied.");
+            Ok(())
+        }
         [command] if command == "show" => {
             let config = load_config()?;
             println!("{}", serde_json::to_string_pretty(&config)?);
@@ -1908,7 +1988,7 @@ fn config_command(args: Vec<String>) -> Result<()> {
             Ok(())
         }
         _ => anyhow::bail!(
-            "usage: bdfr-sentinel-service config show | exclusions | exclude-path <add|remove> <path> | exclude-extension <add|remove> <ext> | exclude-process <add|remove> <exe> | scheduled-scan-interval <minutes> | reset | set <setting> <true|false> | apply <setting=true>... | apply-restart <setting=true>..."
+            "usage: bdfr-sentinel-service config show | apply-ui <base64-json> | exclusions | exclude-path <add|remove> <path> | exclude-extension <add|remove> <ext> | exclude-process <add|remove> <exe> | scheduled-scan-interval <minutes> | reset | set <setting> <true|false> | apply <setting=true>... | apply-restart <setting=true>..."
         ),
     }
 }
