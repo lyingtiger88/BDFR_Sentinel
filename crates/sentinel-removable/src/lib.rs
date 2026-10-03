@@ -65,9 +65,8 @@ impl Drop for RemovableMonitor {
 
 #[cfg(windows)]
 fn removable_drives() -> HashSet<PathBuf> {
-    use windows_sys::Win32::Storage::FileSystem::{
-        GetDriveTypeW, GetLogicalDrives, DRIVE_REMOVABLE,
-    };
+    use windows_sys::Win32::Storage::FileSystem::{GetDriveTypeW, GetLogicalDrives};
+    const DRIVE_REMOVABLE_TYPE: u32 = 2;
 
     let mask = unsafe { GetLogicalDrives() };
     let mut drives = HashSet::new();
