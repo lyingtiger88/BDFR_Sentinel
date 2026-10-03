@@ -186,6 +186,56 @@ jobs:
           Start-Sleep -Seconds 1
           & $service uninstall
 
+      - name: Install Inno Setup
+        shell: pwsh
+        run: choco install innosetup --no-progress -y
+
+      - name: Build standalone installer
+        shell: pwsh
+        run: |
+          $iscc = Join-Path ${env:ProgramFiles(x86)} "Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) { throw "Inno Setup compiler was not found" }
+          & $iscc "installer\BDFR-Sentinel.iss"
+          if ($LASTEXITCODE -ne 0) { throw "Installer build failed" }
+          if (-not (Test-Path "installer\output\BDFR-Sentinel-Setup-x64.exe")) {
+            throw "Installer output was not generated"
+          }
+
+      - name: Standalone installer smoke test
+        shell: pwsh
+        run: |
+          $setup = Resolve-Path "installer\output\BDFR-Sentinel-Setup-x64.exe"
+          & $setup /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP-
+          if ($LASTEXITCODE -ne 0) { throw "Silent installer failed" }
+
+          $installDir = Join-Path $env:ProgramFiles "BDFR Sentinel"
+          $gui = Join-Path $installDir "bdfr-sentinel-gui.exe"
+          $serviceExe = Join-Path $installDir "bdfr-sentinel-service.exe"
+          $uninstaller = Join-Path $installDir "unins000.exe"
+
+          if (-not (Test-Path $gui)) { throw "Installed GUI was not found" }
+          if (-not (Test-Path $serviceExe)) { throw "Installed service binary was not found" }
+          if (-not (Test-Path $uninstaller)) { throw "Windows uninstaller was not registered" }
+
+          $running = $false
+          for ($i = 0; $i -lt 30; $i++) {
+            Start-Sleep -Milliseconds 500
+            $svc = Get-Service -Name BDFRSentinel -ErrorAction SilentlyContinue
+            if ($svc -and $svc.Status -eq "Running") {
+              $running = $true
+              break
+            }
+          }
+          if (-not $running) { throw "Installed protection service did not reach Running state" }
+
+          & $uninstaller /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
+          if ($LASTEXITCODE -ne 0) { throw "Silent uninstall failed" }
+
+          Start-Sleep -Seconds 2
+          if (Get-Service -Name BDFRSentinel -ErrorAction SilentlyContinue) {
+            throw "Protection service still exists after uninstall"
+          }
+
       - name: Package
         shell: pwsh
         run: |
@@ -208,7 +258,9 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: BDFR-Sentinel-Windows-x64
-          path: BDFR-Sentinel-Windows-x64.zip
+          path: |
+            BDFR-Sentinel-Windows-x64.zip
+            installer/output/BDFR-Sentinel-Setup-x64.exe
           if-no-files-found: error
 
       - name: Publish test build into repository
@@ -217,15 +269,17 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force -Path test-builds | Out-Null
           Copy-Item BDFR-Sentinel-Windows-x64.zip test-builds\BDFR-Sentinel-Windows-x64.zip -Force
+          Copy-Item installer\output\BDFR-Sentinel-Setup-x64.exe test-builds\BDFR-Sentinel-Setup-x64.exe -Force
 
           @"
           # BDFR Sentinel Test Builds
 
           Latest Windows x64 test package:
 
-          - `BDFR-Sentinel-Windows-x64.zip`
-          - Contains `bdfr-sentinel.exe`, `bdfr-sentinel-gui.exe`, and `bdfr-sentinel-service.exe`
-          - Generated automatically after a successful Windows release build and smoke test.
+          - `BDFR-Sentinel-Setup-x64.exe` — standalone Windows installer
+          - `BDFR-Sentinel-Windows-x64.zip` — portable/test package
+          - Installer includes GUI, CLI, protection service, definitions, Start Menu integration and Windows uninstaller.
+          - Generated automatically after successful build, protection tests, installer install test and uninstall test.
 
           These packages are test builds, not production releases.
           "@ | Set-Content test-builds\README.md -Encoding UTF8
