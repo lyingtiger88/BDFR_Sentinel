@@ -170,6 +170,10 @@ struct StatusSnapshot {
     minifilter_connected: bool,
     behavior_active: bool,
     definition_updates_active: bool,
+    yara_active: bool,
+    reputation_active: bool,
+    ransomware_active: bool,
+    scheduled_scan_active: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -1937,6 +1941,16 @@ fn write_status_snapshot(
         minifilter_connected,
         behavior_active,
         definition_updates_active,
+        yara_active: config
+            .yara_rules_dir
+            .as_deref()
+            .is_some_and(Path::is_dir),
+        reputation_active: config
+            .reputation_db_path
+            .as_deref()
+            .is_some_and(Path::is_file),
+        ransomware_active: config.enable_ransomware_shield,
+        scheduled_scan_active: config.enable_scheduled_scan,
     };
 
     if let Ok(bytes) = serde_json::to_vec_pretty(&snapshot) {
