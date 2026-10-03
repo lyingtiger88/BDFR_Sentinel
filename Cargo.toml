@@ -17,6 +17,8 @@ members = [
     "crates/sentinel-memory",
     "crates/sentinel-minifilter-client",
     "crates/sentinel-etw",
+    "crates/sentinel-reputation",
+    "crates/sentinel-ransomware",
 ]
 
 [workspace.package]
