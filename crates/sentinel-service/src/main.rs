@@ -1747,6 +1747,89 @@ fn config_command(args: Vec<String>) -> Result<()> {
     ensure_config_exists()?;
 
     match args.as_slice() {
+        [command] if command == "exclusions" => {
+            let config = load_config()?;
+            println!(
+                "{}",
+                serde_json::json!({
+                    "paths": config.excluded_paths,
+                    "extensions": config.excluded_extensions,
+                    "processes": config.excluded_processes,
+                })
+            );
+            Ok(())
+        }
+        [command, action, value] if command == "exclude-path" => {
+            let mut config = load_config()?;
+            let path = PathBuf::from(value);
+            match action.as_str() {
+                "add" => {
+                    if !config.excluded_paths.iter().any(|item| item == &path) {
+                        config.excluded_paths.push(path);
+                    }
+                }
+                "remove" => config.excluded_paths.retain(|item| item != &path),
+                _ => anyhow::bail!("exclude-path action must be add or remove"),
+            }
+            save_config(&config)?;
+            println!("Path exclusion updated. Restart the service to apply.");
+            Ok(())
+        }
+        [command, action, value] if command == "exclude-extension" => {
+            let mut config = load_config()?;
+            let value = value.trim_start_matches('.').to_ascii_lowercase();
+            match action.as_str() {
+                "add" => {
+                    if !config
+                        .excluded_extensions
+                        .iter()
+                        .any(|item| item.eq_ignore_ascii_case(&value))
+                    {
+                        config.excluded_extensions.push(value);
+                    }
+                }
+                "remove" => config
+                    .excluded_extensions
+                    .retain(|item| !item.eq_ignore_ascii_case(&value)),
+                _ => anyhow::bail!("exclude-extension action must be add or remove"),
+            }
+            save_config(&config)?;
+            println!("Extension exclusion updated. Restart the service to apply.");
+            Ok(())
+        }
+        [command, action, value] if command == "exclude-process" => {
+            let mut config = load_config()?;
+            let value = value.to_ascii_lowercase();
+            match action.as_str() {
+                "add" => {
+                    if !config
+                        .excluded_processes
+                        .iter()
+                        .any(|item| item.eq_ignore_ascii_case(&value))
+                    {
+                        config.excluded_processes.push(value);
+                    }
+                }
+                "remove" => config
+                    .excluded_processes
+                    .retain(|item| !item.eq_ignore_ascii_case(&value)),
+                _ => anyhow::bail!("exclude-process action must be add or remove"),
+            }
+            save_config(&config)?;
+            println!("Process exclusion updated. Restart the service to apply.");
+            Ok(())
+        }
+        [command, value] if command == "scheduled-scan-interval" => {
+            let minutes = value
+                .parse::<u64>()
+                .context("scheduled scan interval must be an integer number of minutes")?
+                .max(1);
+            let mut config = load_config()?;
+            config.scheduled_scan_interval_minutes = minutes;
+            save_config(&config)?;
+            println!("Scheduled scan interval updated to {minutes} minute(s).");
+            Ok(())
+        }
         [command] if command == "show" => {
             let config = load_config()?;
             println!("{}", serde_json::to_string_pretty(&config)?);
@@ -1821,7 +1904,7 @@ fn config_command(args: Vec<String>) -> Result<()> {
             Ok(())
         }
         _ => anyhow::bail!(
-            "usage: bdfr-sentinel-service config show | reset | set <setting> <true|false> | apply <setting=true>... | apply-restart <setting=true>..."
+            "usage: bdfr-sentinel-service config show | exclusions | exclude-path <add|remove> <path> | exclude-extension <add|remove> <ext> | exclude-process <add|remove> <exe> | scheduled-scan-interval <minutes> | reset | set <setting> <true|false> | apply <setting=true>... | apply-restart <setting=true>..."
         ),
     }
 }
