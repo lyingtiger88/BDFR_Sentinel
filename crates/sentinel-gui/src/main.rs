@@ -6,7 +6,7 @@ use base64::Engine as _;
 use eframe::egui;
 use sentinel_core::{EngineRegistry, FileScanner, ScanReport, ScannerConfig, ThreatLevel};
 use sentinel_definitions::{ClamHashDatabase, HashDefinitionEngine};
-use sentinel_network::FirewallMode;
+use sentinel_network::{ApplicationRule, FirewallAction, FirewallDirection, FirewallMode, FirewallProtocol};
 use sentinel_pe::PeAnalyzerEngine;
 use sentinel_quarantine::{QuarantineEntry, QuarantineStore};
 use serde::{Deserialize, Serialize};
@@ -336,6 +336,8 @@ struct ProtectionPreferences {
     #[serde(default)]
     firewall_mode: FirewallMode,
     #[serde(default)]
+    firewall_application_rules: Vec<ApplicationRule>,
+    #[serde(default)]
     enable_scheduled_scan: bool,
     #[serde(default = "default_enabled")]
     auto_quarantine: bool,
@@ -364,6 +366,7 @@ impl Default for ProtectionPreferences {
             enable_usb_protection: true,
             enable_network_protection: true,
             firewall_mode: FirewallMode::Smart,
+            firewall_application_rules: Vec::new(),
             enable_scheduled_scan: false,
             auto_quarantine: true,
             scheduled_scan_interval_minutes: 24 * 60,
@@ -1804,6 +1807,168 @@ impl SentinelApp {
                 .size(11.0)
                 .color(ui.visuals().weak_text_color()),
             );
+
+            ui.add_space(8.0);
+            ui.horizontal(|ui| {
+                if fluent_button(ui, "Allow application", false).clicked() {
+                    if let Some(path) = rfd::FileDialog::new()
+                        .add_filter("Executable", &["exe"])
+                        .pick_file()
+                    {
+                        if !self
+                            .protection_preferences
+                            .firewall_application_rules
+                            .iter()
+                            .any(|rule| rule.application == path)
+                        {
+                            self.protection_preferences.firewall_application_rules.push(
+                                ApplicationRule {
+                                    application: path,
+                                    direction: FirewallDirection::Outbound,
+                                    action: FirewallAction::Allow,
+                                    protocol: FirewallProtocol::Any,
+                                    remote_ports: Vec::new(),
+                                    enabled: true,
+                                },
+                            );
+                        }
+                    }
+                }
+
+                if fluent_button(ui, "Block application", true).clicked() {
+                    if let Some(path) = rfd::FileDialog::new()
+                        .add_filter("Executable", &["exe"])
+                        .pick_file()
+                    {
+                        if !self
+                            .protection_preferences
+                            .firewall_application_rules
+                            .iter()
+                            .any(|rule| rule.application == path)
+                        {
+                            self.protection_preferences.firewall_application_rules.push(
+                                ApplicationRule {
+                                    application: path,
+                                    direction: FirewallDirection::Both,
+                                    action: FirewallAction::Block,
+                                    protocol: FirewallProtocol::Any,
+                                    remote_ports: Vec::new(),
+                                    enabled: true,
+                                },
+                            );
+                        }
+                    }
+                }
+            });
+
+            let mut remove_rule = None;
+            for (index, rule) in self
+                .protection_preferences
+                .firewall_application_rules
+                .iter_mut()
+                .enumerate()
+            {
+                egui::Frame::new()
+                    .fill(ui.visuals().faint_bg_color)
+                    .corner_radius(8.0)
+                    .inner_margin(10.0)
+                    .outer_margin(egui::Margin::symmetric(0, 4))
+                    .show(ui, |ui| {
+                        ui.horizontal_wrapped(|ui| {
+                            ui.checkbox(&mut rule.enabled, "");
+                            ui.label(
+                                egui::RichText::new(
+                                    rule.application
+                                        .file_name()
+                                        .and_then(|name| name.to_str())
+                                        .unwrap_or("application"),
+                                )
+                                .strong(),
+                            );
+
+                            egui::ComboBox::from_id_salt(("fw_action", index))
+                                .selected_text(match rule.action {
+                                    FirewallAction::Allow => "Allow",
+                                    FirewallAction::Block => "Block",
+                                })
+                                .show_ui(ui, |ui| {
+                                    ui.selectable_value(
+                                        &mut rule.action,
+                                        FirewallAction::Allow,
+                                        "Allow",
+                                    );
+                                    ui.selectable_value(
+                                        &mut rule.action,
+                                        FirewallAction::Block,
+                                        "Block",
+                                    );
+                                });
+
+                            egui::ComboBox::from_id_salt(("fw_direction", index))
+                                .selected_text(match rule.direction {
+                                    FirewallDirection::Outbound => "Outbound",
+                                    FirewallDirection::Inbound => "Inbound",
+                                    FirewallDirection::Both => "Both",
+                                })
+                                .show_ui(ui, |ui| {
+                                    ui.selectable_value(
+                                        &mut rule.direction,
+                                        FirewallDirection::Outbound,
+                                        "Outbound",
+                                    );
+                                    ui.selectable_value(
+                                        &mut rule.direction,
+                                        FirewallDirection::Inbound,
+                                        "Inbound",
+                                    );
+                                    ui.selectable_value(
+                                        &mut rule.direction,
+                                        FirewallDirection::Both,
+                                        "Both",
+                                    );
+                                });
+
+                            egui::ComboBox::from_id_salt(("fw_protocol", index))
+                                .selected_text(match rule.protocol {
+                                    FirewallProtocol::Any => "Any protocol",
+                                    FirewallProtocol::Tcp => "TCP",
+                                    FirewallProtocol::Udp => "UDP",
+                                })
+                                .show_ui(ui, |ui| {
+                                    ui.selectable_value(
+                                        &mut rule.protocol,
+                                        FirewallProtocol::Any,
+                                        "Any protocol",
+                                    );
+                                    ui.selectable_value(
+                                        &mut rule.protocol,
+                                        FirewallProtocol::Tcp,
+                                        "TCP",
+                                    );
+                                    ui.selectable_value(
+                                        &mut rule.protocol,
+                                        FirewallProtocol::Udp,
+                                        "UDP",
+                                    );
+                                });
+
+                            if ui.small_button("Remove").clicked() {
+                                remove_rule = Some(index);
+                            }
+                        });
+                        ui.label(
+                            egui::RichText::new(rule.application.display().to_string())
+                                .size(10.0)
+                                .color(ui.visuals().weak_text_color()),
+                        );
+                    });
+            }
+
+            if let Some(index) = remove_rule {
+                self.protection_preferences
+                    .firewall_application_rules
+                    .remove(index);
+            }
             ui.checkbox(
                 &mut self.protection_preferences.enable_scheduled_scan,
                 "Scheduled background scan",
