@@ -14,6 +14,7 @@ use sentinel_pe::PeAnalyzerEngine;
 use sentinel_quarantine::QuarantineStore;
 use sentinel_ransomware::RansomwareMonitor;
 use sentinel_realtime::{RealtimeConfig, RealtimeMonitor};
+use sentinel_removable::RemovableMonitor;
 use sentinel_reputation::{ReputationDatabase, ReputationEngine};
 use sentinel_telemetry::{
     ProcessEventKind, ProcessTelemetry, RegistryEventKind, RegistryTelemetry,
@@ -87,6 +88,8 @@ struct ServiceConfig {
     enable_definition_updates: bool,
     #[serde(default = "default_true")]
     enable_ransomware_shield: bool,
+    #[serde(default = "default_true")]
+    enable_usb_protection: bool,
     #[serde(default)]
     enable_scheduled_scan: bool,
     #[serde(default = "default_scheduled_scan_interval_minutes")]
@@ -116,6 +119,7 @@ struct UiProtectionSettings {
     enable_minifilter: bool,
     enable_definition_updates: bool,
     enable_ransomware_shield: bool,
+    enable_usb_protection: bool,
     enable_scheduled_scan: bool,
     auto_quarantine: bool,
     scheduled_scan_interval_minutes: u64,
@@ -161,6 +165,7 @@ impl ServiceConfig {
             enable_minifilter: true,
             enable_definition_updates: true,
             enable_ransomware_shield: true,
+            enable_usb_protection: true,
             enable_scheduled_scan: false,
             scheduled_scan_interval_minutes: 24 * 60,
         }
@@ -195,6 +200,7 @@ struct StatusSnapshot {
     reputation_active: bool,
     ransomware_active: bool,
     scheduled_scan_active: bool,
+    usb_protection_active: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -769,6 +775,76 @@ fn run_service() -> Result<()> {
         None
     };
 
+    let usb_monitor = if config.enable_usb_protection {
+        let usb_scanner = Arc::clone(&scanner);
+        let usb_quarantine = config.quarantine_dir.clone();
+        let usb_auto_quarantine = config.auto_quarantine;
+        let usb_excluded_paths = config.excluded_paths.clone();
+        let usb_excluded_extensions = config.excluded_extensions.clone();
+
+        Some(RemovableMonitor::start(Duration::from_secs(3), move |drive| {
+            record_threat_event(
+                "usb-protection",
+                "scan-start",
+                &drive,
+                "new removable drive detected",
+            );
+
+            let scanner = Arc::clone(&usb_scanner);
+            let quarantine_dir = usb_quarantine.clone();
+            let excluded_paths = usb_excluded_paths.clone();
+            let excluded_extensions = usb_excluded_extensions.clone();
+
+            let _ = thread::Builder::new()
+                .name("bdfr-sentinel-usb-scan".to_string())
+                .spawn(move || {
+                    for entry in WalkDir::new(&drive)
+                        .max_depth(8)
+                        .follow_links(false)
+                        .into_iter()
+                        .filter_map(Result::ok)
+                    {
+                        if !entry.file_type().is_file() {
+                            continue;
+                        }
+
+                        let path = entry.path();
+                        if is_path_excluded(path, &excluded_paths, &excluded_extensions)
+                            || !is_usb_scan_candidate(path)
+                        {
+                            continue;
+                        }
+
+                        match scanner.scan_file(path) {
+                            Ok(report) if report.verdict.level == ThreatLevel::Malicious => {
+                                record_threat_event(
+                                    "usb-protection",
+                                    "detect",
+                                    path,
+                                    "malware detected on removable drive",
+                                );
+
+                                if usb_auto_quarantine {
+                                    let _ = QuarantineStore::open(&quarantine_dir).and_then(|store| {
+                                        store.quarantine_file(
+                                            path,
+                                            "malware detected by removable drive protection",
+                                        )
+                                    });
+                                }
+                            }
+                            Ok(_) => {}
+                            Err(err) => {
+                                warn!(path = %path.display(), error = %err, "USB scan skipped file");
+                            }
+                        }
+                    }
+                });
+        }))
+    } else {
+        None
+    };
+
     let policy_scanner = Arc::clone(&scanner);
     let policy_quarantine = config.quarantine_dir.clone();
     let policy_auto_quarantine = config.auto_quarantine;
@@ -1254,6 +1330,7 @@ fn run_service() -> Result<()> {
 
     info!(
         ransomware_shield = ransomware_monitor.is_some(),
+        usb_protection = usb_monitor.is_some(),
         scheduled_scan = scheduled_scan_thread.is_some(),
         "BDFR Sentinel real-time protection service started"
     );
@@ -1629,6 +1706,16 @@ fn is_path_excluded(
         })
 }
 
+fn is_usb_scan_candidate(path: &Path) -> bool {
+    if is_preexecution_candidate(path) {
+        return true;
+    }
+
+    path.file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| name.eq_ignore_ascii_case("autorun.inf"))
+}
+
 fn is_preexecution_candidate(path: &Path) -> bool {
     matches!(
         path.extension()
@@ -1761,6 +1848,7 @@ fn apply_config_setting(config: &mut ServiceConfig, key: &str, enabled: bool) ->
         "minifilter" => config.enable_minifilter = enabled,
         "definition_updates" => config.enable_definition_updates = enabled,
         "ransomware_shield" => config.enable_ransomware_shield = enabled,
+        "usb_protection" => config.enable_usb_protection = enabled,
         "scheduled_scan" => config.enable_scheduled_scan = enabled,
         "auto_quarantine" => config.auto_quarantine = enabled,
         _ => anyhow::bail!("unknown protection setting: {key}"),
@@ -1872,6 +1960,7 @@ fn config_command(args: Vec<String>) -> Result<()> {
             config.enable_minifilter = settings.enable_minifilter;
             config.enable_definition_updates = settings.enable_definition_updates;
             config.enable_ransomware_shield = settings.enable_ransomware_shield;
+            config.enable_usb_protection = settings.enable_usb_protection;
             config.enable_scheduled_scan = settings.enable_scheduled_scan;
             config.auto_quarantine = settings.auto_quarantine;
             config.scheduled_scan_interval_minutes =
@@ -2028,6 +2117,7 @@ fn write_status_snapshot(
             .is_some_and(Path::is_file),
         ransomware_active: config.enable_ransomware_shield,
         scheduled_scan_active: config.enable_scheduled_scan,
+        usb_protection_active: config.enable_usb_protection,
     };
 
     if let Ok(bytes) = serde_json::to_vec_pretty(&snapshot) {
