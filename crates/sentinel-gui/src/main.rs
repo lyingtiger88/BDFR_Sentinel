@@ -1343,10 +1343,20 @@ impl SentinelApp {
                 component_label(self.protection_snapshot.usb_protection_active),
                 component_color(self.protection_snapshot.usb_protection_active),
             );
+            let firewall_status = if self.protection_snapshot.network_protection_active {
+                match self.protection_snapshot.firewall_mode {
+                    FirewallMode::Smart => "Active • Smart",
+                    FirewallMode::Whitelist => "Active • Whitelist",
+                    FirewallMode::BlockAll => "Active • Block all",
+                    FirewallMode::AllowAll => "Active • Allow all",
+                }
+            } else {
+                "Inactive"
+            };
             status_row(
                 ui,
                 "Kernel WFP firewall",
-                component_label(self.protection_snapshot.network_protection_active),
+                firewall_status,
                 component_color(self.protection_snapshot.network_protection_active),
             );
 
