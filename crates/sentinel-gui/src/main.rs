@@ -593,8 +593,7 @@ impl SentinelApp {
 
         self.system.refresh_cpu_usage();
         self.system.refresh_memory();
-        self.system
-            .refresh_processes(ProcessesToUpdate::All, true);
+        self.system.refresh_processes(ProcessesToUpdate::All, true);
 
         self.cpu_usage = self.system.global_cpu_usage().clamp(0.0, 100.0);
         let total = self.system.total_memory();
@@ -1051,7 +1050,11 @@ impl SentinelApp {
                                 "Sentinel: {:.1}% CPU • {} process{}",
                                 self.sentinel_cpu_usage,
                                 self.sentinel_process_count,
-                                if self.sentinel_process_count == 1 { "" } else { "es" }
+                                if self.sentinel_process_count == 1 {
+                                    ""
+                                } else {
+                                    "es"
+                                }
                             ),
                             accent,
                         )
