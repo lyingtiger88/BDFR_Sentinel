@@ -15,6 +15,7 @@ use sentinel_telemetry::{
     ProcessEventKind, ProcessTelemetry, RegistryEventKind, RegistryTelemetry,
 };
 use sentinel_updater::{StagingUpdater, UpdateManifest, UpdateVerifier};
+use sentinel_yara::{YaraEngine, YaraXBackend};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
@@ -48,6 +49,8 @@ struct ServiceConfig {
     auto_quarantine: bool,
     hdb_path: Option<PathBuf>,
     hsb_path: Option<PathBuf>,
+    #[serde(default)]
+    yara_rules_dir: Option<PathBuf>,
     quarantine_dir: PathBuf,
     #[serde(default)]
     definition_update_public_key: Option<PathBuf>,
@@ -95,6 +98,7 @@ impl ServiceConfig {
             auto_quarantine: true,
             hdb_path: Some(program_data.join("Definitions").join("main.hdb")),
             hsb_path: Some(program_data.join("Definitions").join("main.hsb")),
+            yara_rules_dir: Some(program_data.join("Definitions").join("Yara")),
             quarantine_dir: program_data.join("Quarantine"),
             definition_update_public_key: Some(
                 program_data
@@ -339,6 +343,7 @@ fn print_diagnostics() -> Result<()> {
         hdb_exists: bool,
         hsb_exists: bool,
         update_public_key_exists: bool,
+        yara_rules_dir_exists: bool,
         status_snapshot_exists: bool,
     }
 
@@ -365,6 +370,10 @@ fn print_diagnostics() -> Result<()> {
             .definition_update_public_key
             .as_deref()
             .is_some_and(Path::is_file),
+        yara_rules_dir_exists: config
+            .yara_rules_dir
+            .as_deref()
+            .is_some_and(Path::is_dir),
         status_snapshot_exists: status_path().is_file(),
     };
 
@@ -537,6 +546,7 @@ fn run_service() -> Result<()> {
     let scanner = Arc::new(build_scanner(
         config.hdb_path.as_deref(),
         config.hsb_path.as_deref(),
+        config.yara_rules_dir.as_deref(),
     )?);
 
     let realtime_config = RealtimeConfig {
@@ -1094,6 +1104,7 @@ fn run_protection_loop() -> Result<()> {
     let scanner = Arc::new(build_scanner(
         config.hdb_path.as_deref(),
         config.hsb_path.as_deref(),
+        config.yara_rules_dir.as_deref(),
     )?);
     let quarantine_dir = config.quarantine_dir.clone();
     let auto_quarantine = config.auto_quarantine;
@@ -1183,7 +1194,11 @@ fn is_script_path(path: &Path) -> bool {
         .unwrap_or(false)
 }
 
-fn build_scanner(hdb_path: Option<&Path>, hsb_path: Option<&Path>) -> Result<FileScanner> {
+fn build_scanner(
+    hdb_path: Option<&Path>,
+    hsb_path: Option<&Path>,
+    yara_rules_dir: Option<&Path>,
+) -> Result<FileScanner> {
     let mut registry = EngineRegistry::new();
     registry.register(PeAnalyzerEngine);
 
@@ -1205,6 +1220,21 @@ fn build_scanner(hdb_path: Option<&Path>, hsb_path: Option<&Path>) -> Result<Fil
 
     if hashes.has_definitions() {
         registry.register(hashes);
+    }
+
+    if let Some(path) = yara_rules_dir {
+        match YaraXBackend::compile_directory(path) {
+            Ok(Some(backend)) => {
+                info!(rules = backend.rule_count(), path = %path.display(), "loaded YARA-X rules");
+                registry.register(YaraEngine::new(backend));
+            }
+            Ok(None) => {
+                info!(path = %path.display(), "no YARA rules found");
+            }
+            Err(err) => {
+                warn!(path = %path.display(), error = %err, "YARA-X rule compilation failed");
+            }
+        }
     }
 
     Ok(FileScanner::new(ScannerConfig::default(), registry))
