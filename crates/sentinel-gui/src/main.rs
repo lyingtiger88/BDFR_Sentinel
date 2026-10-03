@@ -16,7 +16,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{mpsc, Arc};
 use std::thread;
 use std::time::{Duration, Instant};
-use sysinfo::System;
+use sysinfo::{ProcessesToUpdate, System};
 use walkdir::WalkDir;
 
 const GOOD: egui::Color32 = egui::Color32::from_rgb(60, 170, 75);
@@ -290,6 +290,9 @@ struct SentinelApp {
     memory_usage: f32,
     memory_used_gb: f64,
     memory_total_gb: f64,
+    sentinel_cpu_usage: f32,
+    sentinel_memory_mb: f64,
+    sentinel_process_count: usize,
     theme_mode: ThemeMode,
     applied_theme: egui::Theme,
     gauge_order: [GaugeKind; 2],
@@ -343,6 +346,9 @@ impl SentinelApp {
             memory_usage: 0.0,
             memory_used_gb: 0.0,
             memory_total_gb: 0.0,
+            sentinel_cpu_usage: 0.0,
+            sentinel_memory_mb: 0.0,
+            sentinel_process_count: 0,
             theme_mode,
             applied_theme,
             gauge_order: [GaugeKind::Cpu, GaugeKind::Memory],
@@ -587,6 +593,8 @@ impl SentinelApp {
 
         self.system.refresh_cpu_usage();
         self.system.refresh_memory();
+        self.system
+            .refresh_processes(ProcessesToUpdate::All, true);
 
         self.cpu_usage = self.system.global_cpu_usage().clamp(0.0, 100.0);
         let total = self.system.total_memory();
@@ -598,6 +606,23 @@ impl SentinelApp {
         };
         self.memory_used_gb = used as f64 / 1024.0 / 1024.0 / 1024.0;
         self.memory_total_gb = total as f64 / 1024.0 / 1024.0 / 1024.0;
+
+        let mut sentinel_cpu = 0.0_f32;
+        let mut sentinel_memory = 0_u64;
+        let mut sentinel_processes = 0_usize;
+
+        for process in self.system.processes().values() {
+            let name = process.name().to_string_lossy().to_ascii_lowercase();
+            if name.starts_with("bdfr-sentinel") {
+                sentinel_cpu += process.cpu_usage();
+                sentinel_memory = sentinel_memory.saturating_add(process.memory());
+                sentinel_processes += 1;
+            }
+        }
+
+        self.sentinel_cpu_usage = sentinel_cpu.max(0.0);
+        self.sentinel_memory_mb = sentinel_memory as f64 / 1024.0 / 1024.0;
+        self.sentinel_process_count = sentinel_processes;
         self.last_metrics_refresh = Instant::now();
     }
 
@@ -1021,7 +1046,13 @@ impl SentinelApp {
                             &mut columns[index],
                             "CPU",
                             self.cpu_usage,
-                            format!("{:.0}% in use", self.cpu_usage),
+                            format!("{:.0}% total system", self.cpu_usage),
+                            format!(
+                                "Sentinel: {:.1}% CPU • {} process{}",
+                                self.sentinel_cpu_usage,
+                                self.sentinel_process_count,
+                                if self.sentinel_process_count == 1 { "" } else { "es" }
+                            ),
                             accent,
                         )
                     }
@@ -1030,9 +1061,10 @@ impl SentinelApp {
                         "Memory",
                         self.memory_usage,
                         format!(
-                            "{:.1} / {:.1} GB",
+                            "{:.1} / {:.1} GB system",
                             self.memory_used_gb, self.memory_total_gb
                         ),
+                        format!("Sentinel: {:.1} MB RAM", self.sentinel_memory_mb),
                         egui::Color32::from_rgb(177, 113, 255),
                     ),
                 };
@@ -1912,6 +1944,7 @@ fn resource_card(
     title: &str,
     percentage: f32,
     detail: String,
+    sentinel_detail: String,
     color: egui::Color32,
 ) -> GaugeCardResponse {
     let shown = egui::Frame::new()
@@ -1982,11 +2015,18 @@ fn resource_card(
                             .size(12.0)
                             .color(ui.visuals().weak_text_color()),
                     );
+                    ui.add_space(5.0);
+                    ui.label(
+                        egui::RichText::new(sentinel_detail)
+                            .size(12.0)
+                            .strong()
+                            .color(color),
+                    );
                     ui.add_space(6.0);
                     ui.label(
-                        egui::RichText::new("Live system usage")
+                        egui::RichText::new("Live system + BDFR Sentinel usage")
                             .size(11.0)
-                            .color(color),
+                            .color(ui.visuals().weak_text_color()),
                     );
                 });
             });
