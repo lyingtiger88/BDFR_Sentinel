@@ -832,9 +832,14 @@ fn run_service() -> Result<()> {
     let etw_quarantine = config.quarantine_dir.clone();
     let etw_auto_quarantine = config.auto_quarantine;
     let etw_memory_enabled = config.enable_memory_telemetry;
+    let etw_excluded_processes = config.excluded_processes.clone();
 
     let mut etw_process = if config.enable_etw {
         match EtwProcessTelemetry::start(move |event| {
+            if process_is_excluded(&event.image_name, &etw_excluded_processes) {
+                return;
+            }
+
             let parent_name = etw_names_for_callback
                 .lock()
                 .ok()
@@ -943,12 +948,15 @@ fn run_service() -> Result<()> {
     let process_auto_quarantine = config.auto_quarantine;
     let memory_telemetry_enabled = config.enable_memory_telemetry;
     let process_behavior = Arc::clone(&behavior);
+    let process_excluded_processes = config.excluded_processes.clone();
     let process_telemetry = if config.enable_process_telemetry && etw_process.is_none() {
         info!("ETW unavailable or disabled; enabling low-frequency process polling fallback");
         Some(ProcessTelemetry::start(
             Duration::from_secs(2),
             move |event| {
-                if event.kind != ProcessEventKind::Started {
+                if event.kind != ProcessEventKind::Started
+                    || process_is_excluded(&event.process.name, &process_excluded_processes)
+                {
                     return;
                 }
 
@@ -1566,6 +1574,16 @@ fn terminate_process_for_malware(pid: u32) -> Result<()> {
 #[cfg(not(windows))]
 fn terminate_process_for_malware(_pid: u32) -> Result<()> {
     anyhow::bail!("process termination is only available on Windows")
+}
+
+fn process_is_excluded(process_name: &str, excluded_processes: &[String]) -> bool {
+    let process_name = process_name
+        .rsplit(['\\', '/'])
+        .next()
+        .unwrap_or(process_name);
+    excluded_processes
+        .iter()
+        .any(|excluded| excluded.eq_ignore_ascii_case(process_name))
 }
 
 fn is_path_excluded(
