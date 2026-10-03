@@ -214,11 +214,17 @@ jobs:
             Start-Sleep -Milliseconds 250
           }
 
-          & $setup /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP- /LOG="$installLog"
-          $setupExit = $LASTEXITCODE
-          if ($setupExit -ne 0) {
+          $setupArgs = @(
+            "/VERYSILENT",
+            "/SUPPRESSMSGBOXES",
+            "/NORESTART",
+            "/SP-",
+            "/LOG=$installLog"
+          )
+          $setupProcess = Start-Process -FilePath $setup -ArgumentList $setupArgs -Wait -PassThru
+          if ($setupProcess.ExitCode -ne 0) {
             if (Test-Path $installLog) { Get-Content $installLog | Write-Host }
-            throw "Silent installer failed with exit code $setupExit"
+            throw "Silent installer failed with exit code $($setupProcess.ExitCode)"
           }
 
           $installDir = Join-Path $env:ProgramFiles "BDFR Sentinel"
@@ -241,8 +247,14 @@ jobs:
           }
           if (-not $running) { throw "Installed protection service did not reach Running state" }
 
-          & $uninstaller /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
-          if ($LASTEXITCODE -ne 0) { throw "Silent uninstall failed" }
+          $uninstallProcess = Start-Process -FilePath $uninstaller -ArgumentList @(
+            "/VERYSILENT",
+            "/SUPPRESSMSGBOXES",
+            "/NORESTART"
+          ) -Wait -PassThru
+          if ($uninstallProcess.ExitCode -ne 0) {
+            throw "Silent uninstall failed with exit code $($uninstallProcess.ExitCode)"
+          }
 
           Start-Sleep -Seconds 2
           if (Get-Service -Name BDFRSentinel -ErrorAction SilentlyContinue) {
