@@ -261,6 +261,9 @@ jobs:
             throw "Protection service still exists after uninstall"
           }
 
+          Write-Host "Standalone installer smoke test passed."
+          exit 0
+
       - name: Package
         shell: pwsh
         run: |
