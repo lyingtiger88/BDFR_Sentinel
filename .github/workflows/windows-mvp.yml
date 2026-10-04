@@ -204,16 +204,16 @@ jobs:
       - name: Standalone installer smoke test
         shell: pwsh
         run: |
-          $setup = Resolve-Path "installer\output\BDFR-Sentinel-Setup-x64.exe"
+          $ErrorActionPreference = "Stop"
+          $setup = (Resolve-Path "installer\output\BDFR-Sentinel-Setup-x64.exe").Path
           $installLog = Join-Path $env:RUNNER_TEMP "bdfr-sentinel-install.log"
 
-          cmd.exe /c "sc.exe stop BDFRSentinel >nul 2>&1 & exit /b 0"
-          cmd.exe /c "sc.exe delete BDFRSentinel >nul 2>&1 & exit /b 0"
-          for ($i = 0; $i -lt 20; $i++) {
-            if (-not (Get-Service -Name BDFRSentinel -ErrorAction SilentlyContinue)) { break }
-            Start-Sleep -Milliseconds 250
-          }
+          Write-Host "Cleaning stale service state..."
+          sc.exe stop BDFRSentinel 2>$null | Out-Null
+          sc.exe delete BDFRSentinel 2>$null | Out-Null
+          Start-Sleep -Seconds 1
 
+          Write-Host "Running standalone installer..."
           $setupArgs = @(
             "/VERYSILENT",
             "/SUPPRESSMSGBOXES",
@@ -222,47 +222,69 @@ jobs:
             "/LOG=$installLog"
           )
           $setupProcess = Start-Process -FilePath $setup -ArgumentList $setupArgs -Wait -PassThru
+          Write-Host "Installer exit code: $($setupProcess.ExitCode)"
           if ($setupProcess.ExitCode -ne 0) {
-            if (Test-Path $installLog) { Get-Content $installLog | Write-Host }
-            throw "Silent installer failed with exit code $($setupProcess.ExitCode)"
+            if (Test-Path $installLog) {
+              Write-Host "----- Inno install log -----"
+              Get-Content $installLog | Write-Host
+            }
+            throw "Standalone installer failed"
           }
 
           $installDir = Join-Path $env:ProgramFiles "BDFR Sentinel"
           $gui = Join-Path $installDir "bdfr-sentinel-gui.exe"
           $serviceExe = Join-Path $installDir "bdfr-sentinel-service.exe"
+          $cli = Join-Path $installDir "bdfr-sentinel.exe"
           $uninstaller = Join-Path $installDir "unins000.exe"
 
-          if (-not (Test-Path $gui)) { throw "Installed GUI was not found" }
-          if (-not (Test-Path $serviceExe)) { throw "Installed service binary was not found" }
-          if (-not (Test-Path $uninstaller)) { throw "Windows uninstaller was not registered" }
-
-          $running = $false
-          for ($i = 0; $i -lt 30; $i++) {
-            Start-Sleep -Milliseconds 500
-            $svc = Get-Service -Name BDFRSentinel -ErrorAction SilentlyContinue
-            if ($svc -and $svc.Status -eq "Running") {
-              $running = $true
-              break
+          foreach ($required in @($gui, $serviceExe, $cli, $uninstaller)) {
+            if (-not (Test-Path $required)) {
+              throw "Required installed file missing: $required"
             }
           }
-          if (-not $running) { throw "Installed protection service did not reach Running state" }
+          Write-Host "Installed files verified."
 
+          $running = $false
+          for ($i = 0; $i -lt 40; $i++) {
+            Start-Sleep -Milliseconds 500
+            $svc = Get-Service -Name BDFRSentinel -ErrorAction SilentlyContinue
+            if ($svc) {
+              $svc.Refresh()
+              if ($svc.Status -eq "Running") {
+                $running = $true
+                break
+              }
+            }
+          }
+          if (-not $running) {
+            if (Test-Path $installLog) { Get-Content $installLog | Write-Host }
+            throw "Installed protection service did not reach Running state"
+          }
+          Write-Host "Protection service is running."
+
+          Write-Host "Running standard Windows uninstaller..."
           $uninstallProcess = Start-Process -FilePath $uninstaller -ArgumentList @(
             "/VERYSILENT",
             "/SUPPRESSMSGBOXES",
             "/NORESTART"
           ) -Wait -PassThru
+          Write-Host "Uninstaller exit code: $($uninstallProcess.ExitCode)"
           if ($uninstallProcess.ExitCode -ne 0) {
-            throw "Silent uninstall failed with exit code $($uninstallProcess.ExitCode)"
+            throw "Standalone uninstaller failed"
           }
 
-          Start-Sleep -Seconds 2
-          if (Get-Service -Name BDFRSentinel -ErrorAction SilentlyContinue) {
+          $removed = $false
+          for ($i = 0; $i -lt 40; $i++) {
+            Start-Sleep -Milliseconds 500
+            if (-not (Get-Service -Name BDFRSentinel -ErrorAction SilentlyContinue)) {
+              $removed = $true
+              break
+            }
+          }
+          if (-not $removed) {
             throw "Protection service still exists after uninstall"
           }
-
-          Write-Host "Standalone installer smoke test passed."
-          exit 0
+          Write-Host "Standalone install/uninstall smoke test passed."
 
       - name: Package
         shell: pwsh
