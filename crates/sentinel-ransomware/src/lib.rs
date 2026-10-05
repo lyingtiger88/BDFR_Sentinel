@@ -13,6 +13,8 @@ pub struct RansomwareAssessment {
     pub recent_changes: usize,
     pub unique_directories: usize,
     pub unique_extensions: usize,
+    pub risk_score: u8,
+    pub aggressive_mode: bool,
 }
 
 #[derive(Debug)]
@@ -28,21 +30,33 @@ pub struct RansomwareShield {
     malicious_change_threshold: usize,
     events: VecDeque<ChangeEvent>,
     canary_hits: HashMap<PathBuf, Instant>,
+    aggressive_mode: bool,
 }
 
 impl Default for RansomwareShield {
     fn default() -> Self {
-        Self {
-            window: Duration::from_secs(10),
-            suspicious_change_threshold: 40,
-            malicious_change_threshold: 120,
-            events: VecDeque::new(),
-            canary_hits: HashMap::new(),
-        }
+        Self::with_aggressive_mode(false)
     }
 }
 
 impl RansomwareShield {
+    pub fn with_aggressive_mode(aggressive_mode: bool) -> Self {
+        let (window, suspicious_change_threshold, malicious_change_threshold) = if aggressive_mode {
+            (Duration::from_secs(8), 18, 60)
+        } else {
+            (Duration::from_secs(10), 40, 120)
+        };
+
+        Self {
+            window,
+            suspicious_change_threshold,
+            malicious_change_threshold,
+            events: VecDeque::new(),
+            canary_hits: HashMap::new(),
+            aggressive_mode,
+        }
+    }
+
     pub fn observe_path(&mut self, path: &Path) -> RansomwareAssessment {
         let now = Instant::now();
         self.events.push_back(ChangeEvent {
@@ -73,11 +87,18 @@ impl RansomwareShield {
         let unique_directories = directories.len();
         let unique_extensions = extensions.len();
 
+        let threshold_progress =
+            ((recent_changes.saturating_mul(60)) / self.suspicious_change_threshold.max(1)).min(60);
+        let directory_score = unique_directories.saturating_mul(8).min(24);
+        let extension_score = unique_extensions.saturating_mul(4).min(16);
+        let risk_score = (threshold_progress + directory_score + extension_score).min(100) as u8;
+
         let suspicious =
             recent_changes >= self.suspicious_change_threshold && unique_directories >= 2;
-        let malicious = recent_changes >= self.malicious_change_threshold
+        let malicious = (recent_changes >= self.malicious_change_threshold
             && unique_directories >= 3
-            && unique_extensions >= 3;
+            && unique_extensions >= 3)
+            || (risk_score >= 90 && unique_directories >= 4);
 
         RansomwareAssessment {
             suspicious,
@@ -85,6 +106,8 @@ impl RansomwareShield {
             recent_changes,
             unique_directories,
             unique_extensions,
+            risk_score,
+            aggressive_mode: self.aggressive_mode,
         }
     }
 
@@ -107,12 +130,15 @@ impl RansomwareMonitor {
     pub fn start<F>(
         paths: &[PathBuf],
         excluded_paths: Vec<PathBuf>,
+        aggressive_mode: bool,
         on_alert: F,
     ) -> Result<Self, notify::Error>
     where
         F: Fn(PathBuf, RansomwareAssessment) + Send + Sync + 'static,
     {
-        let shield = Arc::new(Mutex::new(RansomwareShield::default()));
+        let shield = Arc::new(Mutex::new(RansomwareShield::with_aggressive_mode(
+            aggressive_mode,
+        )));
         let callback = Arc::new(on_alert);
         let shield_for_callback = Arc::clone(&shield);
         let callback_for_events = Arc::clone(&callback);
@@ -127,7 +153,10 @@ impl RansomwareMonitor {
                     }
                 };
 
-                if !matches!(event.kind, EventKind::Create(_) | EventKind::Modify(_)) {
+                if !matches!(
+                    event.kind,
+                    EventKind::Create(_) | EventKind::Modify(_) | EventKind::Remove(_)
+                ) {
                     return;
                 }
 
@@ -179,6 +208,17 @@ mod tests {
             final_assessment = Some(shield.observe_path(&path));
         }
 
-        assert!(final_assessment.unwrap().malicious);
+        let final_assessment = final_assessment.unwrap();
+        assert!(final_assessment.malicious);
+        assert!(final_assessment.risk_score >= 90);
+    }
+
+    #[test]
+    fn aggressive_mode_uses_lower_thresholds() {
+        let normal = RansomwareShield::with_aggressive_mode(false);
+        let aggressive = RansomwareShield::with_aggressive_mode(true);
+
+        assert!(aggressive.suspicious_change_threshold < normal.suspicious_change_threshold);
+        assert!(aggressive.malicious_change_threshold < normal.malicious_change_threshold);
     }
 }
