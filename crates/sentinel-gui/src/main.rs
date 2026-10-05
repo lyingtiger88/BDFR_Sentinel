@@ -2716,8 +2716,7 @@ impl SentinelApp {
                         .color(ui.visuals().weak_text_color()),
                 );
                 if ui.small_button("Refresh").clicked() {
-                    self.last_connection_refresh =
-                        Instant::now() - Duration::from_secs(10);
+                    self.last_connection_refresh = Instant::now() - Duration::from_secs(10);
                     self.refresh_live_connections();
                 }
             });
