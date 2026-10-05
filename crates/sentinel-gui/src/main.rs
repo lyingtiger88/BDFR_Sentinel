@@ -3275,11 +3275,8 @@ fn page_header(ui: &mut egui::Ui, page: Page, title: &str, subtitle: &str) {
         egui::vec2(44.0, 44.0),
     );
 
-    ui.painter().rect_filled(
-        icon_rect,
-        11.0,
-        ui.visuals().widgets.active.bg_fill,
-    );
+    ui.painter()
+        .rect_filled(icon_rect, 11.0, ui.visuals().widgets.active.bg_fill);
     draw_page_icon(
         ui.painter(),
         page,
@@ -3306,12 +3303,7 @@ fn page_header(ui: &mut egui::Ui, page: Page, title: &str, subtitle: &str) {
     ui.add_space(10.0);
 }
 
-fn draw_page_icon(
-    painter: &egui::Painter,
-    page: Page,
-    rect: egui::Rect,
-    color: egui::Color32,
-) {
+fn draw_page_icon(painter: &egui::Painter, page: Page, rect: egui::Rect, color: egui::Color32) {
     let stroke = egui::Stroke::new(1.8_f32, color);
     let c = rect.center();
     let w = rect.width();
@@ -3350,8 +3342,14 @@ fn draw_page_icon(
             let right = egui::pos2(rect.right() - w * 0.12, rect.top() + h * 0.22);
             let bottom = egui::pos2(c.x, rect.bottom());
             painter.add(egui::Shape::closed_line(
-                vec![top, right, egui::pos2(rect.right() - w * 0.18, c.y + h * 0.18), bottom,
-                     egui::pos2(rect.left() + w * 0.18, c.y + h * 0.18), left],
+                vec![
+                    top,
+                    right,
+                    egui::pos2(rect.right() - w * 0.18, c.y + h * 0.18),
+                    bottom,
+                    egui::pos2(rect.left() + w * 0.18, c.y + h * 0.18),
+                    left,
+                ],
                 stroke,
             ));
             painter.line_segment(
