@@ -121,7 +121,100 @@ fn hidden_command(program: impl AsRef<std::ffi::OsStr>) -> Command {
     command
 }
 
+#[cfg(windows)]
+struct SingleInstanceGuard(*mut std::ffi::c_void);
+
+#[cfg(windows)]
+impl Drop for SingleInstanceGuard {
+    fn drop(&mut self) {
+        #[link(name = "kernel32")]
+        extern "system" {
+            fn CloseHandle(handle: *mut std::ffi::c_void) -> i32;
+        }
+
+        if !self.0.is_null() {
+            unsafe {
+                let _ = CloseHandle(self.0);
+            }
+        }
+    }
+}
+
+#[cfg(windows)]
+fn focus_existing_instance() {
+    use std::ffi::OsStr;
+    use std::os::windows::ffi::OsStrExt;
+    use std::ptr;
+
+    #[link(name = "user32")]
+    extern "system" {
+        fn FindWindowW(class_name: *const u16, window_name: *const u16) -> *mut std::ffi::c_void;
+        fn ShowWindow(window: *mut std::ffi::c_void, command: i32) -> i32;
+        fn SetForegroundWindow(window: *mut std::ffi::c_void) -> i32;
+    }
+
+    const SW_RESTORE: i32 = 9;
+    let title: Vec<u16> = OsStr::new("BDFR Sentinel")
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect();
+
+    unsafe {
+        let window = FindWindowW(ptr::null(), title.as_ptr());
+        if !window.is_null() {
+            let _ = ShowWindow(window, SW_RESTORE);
+            let _ = SetForegroundWindow(window);
+        }
+    }
+}
+
+#[cfg(windows)]
+fn acquire_single_instance() -> std::io::Result<Option<SingleInstanceGuard>> {
+    use std::ffi::OsStr;
+    use std::os::windows::ffi::OsStrExt;
+    use std::ptr;
+
+    #[link(name = "kernel32")]
+    extern "system" {
+        fn CreateMutexW(
+            security_attributes: *const std::ffi::c_void,
+            initial_owner: i32,
+            name: *const u16,
+        ) -> *mut std::ffi::c_void;
+        fn GetLastError() -> u32;
+        fn CloseHandle(handle: *mut std::ffi::c_void) -> i32;
+    }
+
+    const ERROR_ALREADY_EXISTS: u32 = 183;
+    let name: Vec<u16> = OsStr::new("Local\\BDFR_Sentinel_GUI_91F8715A_71D5_4D49_90A4_7D83F2D7B2D4")
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect();
+
+    unsafe {
+        let handle = CreateMutexW(ptr::null(), 0, name.as_ptr());
+        if handle.is_null() {
+            return Err(std::io::Error::last_os_error());
+        }
+
+        if GetLastError() == ERROR_ALREADY_EXISTS {
+            let _ = CloseHandle(handle);
+            focus_existing_instance();
+            return Ok(None);
+        }
+
+        Ok(Some(SingleInstanceGuard(handle)))
+    }
+}
+
 fn main() -> eframe::Result<()> {
+    #[cfg(windows)]
+    let _single_instance_guard = match acquire_single_instance() {
+        Ok(Some(guard)) => Some(guard),
+        Ok(None) => return Ok(()),
+        Err(_) => None,
+    };
+
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_title("BDFR Sentinel")
@@ -2548,13 +2641,14 @@ impl SentinelApp {
         ui.columns(2, |columns| {
             settings_card(&mut columns[0], "Protection stack", |ui| {
                 for item in [
-                    "Real-time file protection",
-                    "YARA-X + static PE analysis",
-                    "AMSI + behavior telemetry",
-                    "WFP kernel firewall",
+                    "Real-time Protection",
+                    "Advanced Malware Detection",
+                    "Behavior Protection",
+                    "Network Firewall",
                     "Advanced Anti-Ransomware",
-                    "USB / removable protection",
-                    "Encrypted quarantine",
+                    "USB Protection",
+                    "Encrypted Quarantine",
+                    "Game Mode",
                 ] {
                     ui.label(format!("✓ {item}"));
                 }
