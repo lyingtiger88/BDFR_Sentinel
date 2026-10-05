@@ -831,7 +831,8 @@ impl SentinelApp {
         targets.dedup();
 
         if targets.is_empty() {
-            self.status_text = "Select a file, folder, or at least one system drive first".to_string();
+            self.status_text =
+                "Select a file, folder, or at least one system drive first".to_string();
             return;
         }
 
@@ -1560,7 +1561,9 @@ impl SentinelApp {
                 if fluent_button(ui, "Choose folder", false).clicked() {
                     self.target = rfd::FileDialog::new().pick_folder();
                 }
-                if self.target.is_some() && fluent_button(ui, "Clear custom target", false).clicked() {
+                if self.target.is_some()
+                    && fluent_button(ui, "Clear custom target", false).clicked()
+                {
                     self.target = None;
                 }
             });
@@ -1600,17 +1603,13 @@ impl SentinelApp {
             ui.add_space(8.0);
 
             if self.available_drives.is_empty() {
-                ui.label(
-                    egui::RichText::new("No mounted drive roots were detected.")
-                        .color(WARN),
-                );
+                ui.label(egui::RichText::new("No mounted drive roots were detected.").color(WARN));
             } else {
                 ui.horizontal_wrapped(|ui| {
                     for drive in &mut self.available_drives {
                         let label = format!("{}  Drive", drive.path.display());
                         ui.add(
-                            egui::Checkbox::new(&mut drive.selected, label)
-                                .indeterminate(false),
+                            egui::Checkbox::new(&mut drive.selected, label).indeterminate(false),
                         );
                         ui.add_space(8.0);
                     }
@@ -2566,19 +2565,39 @@ impl SentinelApp {
                     ui,
                     "Protection service",
                     &self.service_state,
-                    if self.service_state.contains("Running") { GOOD } else { WARN },
+                    if self.service_state.contains("Running") {
+                        GOOD
+                    } else {
+                        WARN
+                    },
                 );
                 status_row(
                     ui,
                     "Game Mode",
-                    if self.protection_snapshot.game_mode_active { "Active" } else { "Off" },
-                    if self.protection_snapshot.game_mode_active { GOOD } else { ui.visuals().weak_text_color() },
+                    if self.protection_snapshot.game_mode_active {
+                        "Active"
+                    } else {
+                        "Off"
+                    },
+                    if self.protection_snapshot.game_mode_active {
+                        GOOD
+                    } else {
+                        ui.visuals().weak_text_color()
+                    },
                 );
                 status_row(
                     ui,
                     "Anti-Ransomware",
-                    if self.protection_snapshot.ransomware_active { "Active" } else { "Off" },
-                    if self.protection_snapshot.ransomware_active { GOOD } else { WARN },
+                    if self.protection_snapshot.ransomware_active {
+                        "Active"
+                    } else {
+                        "Off"
+                    },
+                    if self.protection_snapshot.ransomware_active {
+                        GOOD
+                    } else {
+                        WARN
+                    },
                 );
             });
         });
