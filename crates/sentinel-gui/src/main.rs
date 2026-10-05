@@ -7,7 +7,8 @@ use eframe::egui;
 use sentinel_core::{EngineRegistry, FileScanner, ScanReport, ScannerConfig, ThreatLevel};
 use sentinel_definitions::{ClamHashDatabase, HashDefinitionEngine};
 use sentinel_network::{
-    ApplicationRule, FirewallAction, FirewallDirection, FirewallMode, FirewallProtocol,
+    query_live_connections, ApplicationRule, FirewallAction, FirewallDirection, FirewallMode,
+    FirewallProtocol, LiveConnection,
 };
 use sentinel_pe::PeAnalyzerEngine;
 use sentinel_quarantine::{QuarantineEntry, QuarantineStore};
@@ -731,6 +732,8 @@ struct SentinelApp {
     new_excluded_process: String,
     pending_realtime_target: Option<bool>,
     pending_realtime_started: Option<Instant>,
+    live_connections: Vec<LiveConnection>,
+    last_connection_refresh: Instant,
 }
 
 impl SentinelApp {
@@ -805,6 +808,8 @@ impl SentinelApp {
             new_excluded_process: String::new(),
             pending_realtime_target: None,
             pending_realtime_started: None,
+            live_connections: Vec::new(),
+            last_connection_refresh: Instant::now() - Duration::from_secs(10),
         };
         app.refresh_quarantine();
         app.refresh_metrics();
@@ -812,6 +817,21 @@ impl SentinelApp {
         app.load_service_preferences();
         app.refresh_threat_events();
         app
+    }
+
+    fn refresh_live_connections(&mut self) {
+        if self.last_connection_refresh.elapsed() < Duration::from_secs(2) {
+            return;
+        }
+        self.last_connection_refresh = Instant::now();
+
+        match query_live_connections() {
+            Ok(rows) => self.live_connections = rows,
+            Err(err) => {
+                self.live_connections.clear();
+                self.status_text = format!("Could not enumerate live connections: {err}");
+            }
+        }
     }
 
     fn refresh_theme(&mut self, ctx: &egui::Context) {
@@ -2686,6 +2706,64 @@ impl SentinelApp {
                     .firewall_application_rules
                     .remove(index);
             }
+            ui.add_space(10.0);
+            ui.separator();
+            ui.horizontal(|ui| {
+                ui.heading("Live connections");
+                ui.label(
+                    egui::RichText::new(format!("{} sockets", self.live_connections.len()))
+                        .size(11.0)
+                        .color(ui.visuals().weak_text_color()),
+                );
+                if ui.small_button("Refresh").clicked() {
+                    self.last_connection_refresh =
+                        Instant::now() - Duration::from_secs(10);
+                    self.refresh_live_connections();
+                }
+            });
+            ui.label(
+                egui::RichText::new(
+                    "Read-only view of active TCP/UDP endpoints. Firewall policy remains controlled by the application rules above.",
+                )
+                .size(11.0)
+                .color(ui.visuals().weak_text_color()),
+            );
+            egui::ScrollArea::vertical()
+                .max_height(220.0)
+                .id_salt("firewall_live_connections")
+                .show(ui, |ui| {
+                    if self.live_connections.is_empty() {
+                        ui.label("No active sockets reported.");
+                    } else {
+                        for connection in self.live_connections.iter().take(150) {
+                            ui.horizontal_wrapped(|ui| {
+                                ui.monospace(&connection.protocol);
+                                ui.label(&connection.state);
+                                ui.monospace(&connection.local_address);
+                                ui.label("→");
+                                ui.monospace(&connection.remote_address);
+                                if let Some(pid) = connection.pid {
+                                    ui.label(
+                                        egui::RichText::new(format!("PID {pid}"))
+                                            .size(10.0)
+                                            .color(ui.visuals().weak_text_color()),
+                                    );
+                                }
+                            });
+                        }
+                        if self.live_connections.len() > 150 {
+                            ui.label(
+                                egui::RichText::new(format!(
+                                    "{} additional sockets hidden",
+                                    self.live_connections.len() - 150
+                                ))
+                                .size(10.0)
+                                .color(ui.visuals().weak_text_color()),
+                            );
+                        }
+                    }
+                });
+
             ui.checkbox(
                 &mut self.protection_preferences.enable_scheduled_scan,
                 "Scheduled background scan",
@@ -3167,6 +3245,9 @@ impl eframe::App for SentinelApp {
         self.refresh_theme(ctx);
         self.refresh_metrics();
         self.refresh_service_state();
+        if matches!(self.page, Page::Settings) {
+            self.refresh_live_connections();
+        }
 
         if self.scanning || self.pending_realtime_target.is_some() {
             ctx.request_repaint_after(Duration::from_millis(200));
