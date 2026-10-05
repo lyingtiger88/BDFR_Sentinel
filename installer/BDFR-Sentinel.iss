@@ -36,6 +36,7 @@ Source: "..\target\release\bdfr-sentinel-gui.exe"; DestDir: "{app}"; Flags: igno
 Source: "..\target\release\bdfr-sentinel-service.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\target\release\bdfr-sentinel.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\Definitions\*"; DestDir: "{commonappdata}\BDFR\Sentinel\Definitions"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist
+Source: "..\themes\*.json"; DestDir: "{app}\themes"; Flags: ignoreversion createallsubdirs skipifsourcedoesntexist
 Source: "..\README.md"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\scripts\Uninstall-Protection.ps1"; DestDir: "{app}\tools"; Flags: ignoreversion skipifsourcedoesntexist
 Source: "..\scripts\Build-Minifilter.ps1"; DestDir: "{app}\tools"; Flags: ignoreversion skipifsourcedoesntexist
