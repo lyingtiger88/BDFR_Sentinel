@@ -151,9 +151,9 @@ fn configure_style(ctx: &egui::Context, mode: ThemeMode) {
 
     let dark = theme == egui::Theme::Dark;
     let mut style = (*ctx.style()).clone();
-    style.spacing.item_spacing = egui::vec2(10.0, 10.0);
-    style.spacing.button_padding = egui::vec2(16.0, 10.0);
-    style.spacing.indent = 18.0;
+    style.spacing.item_spacing = egui::vec2(12.0, 12.0);
+    style.spacing.button_padding = egui::vec2(18.0, 11.0);
+    style.spacing.indent = 20.0;
     style.visuals = if dark {
         egui::Visuals::dark()
     } else {
@@ -161,22 +161,22 @@ fn configure_style(ctx: &egui::Context, mode: ThemeMode) {
     };
 
     let panel = if dark {
-        egui::Color32::from_rgb(38, 38, 38)
+        egui::Color32::from_rgb(29, 36, 46)
     } else {
         egui::Color32::from_rgb(250, 250, 250)
     };
     let panel_hover = if dark {
-        egui::Color32::from_rgb(50, 50, 50)
+        egui::Color32::from_rgb(39, 51, 65)
     } else {
         egui::Color32::from_rgb(238, 238, 238)
     };
     let background = if dark {
-        egui::Color32::from_rgb(31, 31, 31)
+        egui::Color32::from_rgb(20, 27, 36)
     } else {
         egui::Color32::from_rgb(243, 243, 243)
     };
     let sidebar = if dark {
-        egui::Color32::from_rgb(27, 27, 27)
+        egui::Color32::from_rgb(16, 23, 32)
     } else {
         egui::Color32::from_rgb(248, 248, 248)
     };
@@ -223,6 +223,7 @@ enum Page {
     Quarantine,
     History,
     Settings,
+    About,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -254,6 +255,12 @@ struct ScanSummary {
     total: usize,
     cancelled: bool,
     duration: Duration,
+}
+
+#[derive(Debug, Clone)]
+struct ScanDriveOption {
+    path: PathBuf,
+    selected: bool,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -290,6 +297,10 @@ struct ProtectionSnapshot {
     usb_protection_active: bool,
     #[serde(default)]
     network_protection_active: bool,
+    #[serde(default)]
+    game_mode_active: bool,
+    #[serde(default)]
+    ransomware_aggressive: bool,
     #[serde(default)]
     firewall_mode: FirewallMode,
 }
@@ -346,6 +357,12 @@ struct ProtectionPreferences {
     #[serde(default = "default_scheduled_scan_interval_minutes")]
     scheduled_scan_interval_minutes: u64,
     #[serde(default)]
+    enable_game_mode: bool,
+    #[serde(default)]
+    ransomware_aggressive: bool,
+    #[serde(default)]
+    ransomware_protected_paths: Vec<PathBuf>,
+    #[serde(default)]
     excluded_paths: Vec<PathBuf>,
     #[serde(default)]
     excluded_extensions: Vec<String>,
@@ -372,6 +389,9 @@ impl Default for ProtectionPreferences {
             enable_scheduled_scan: false,
             auto_quarantine: true,
             scheduled_scan_interval_minutes: 24 * 60,
+            enable_game_mode: false,
+            ransomware_aggressive: false,
+            ransomware_protected_paths: Vec::new(),
             excluded_paths: Vec::new(),
             excluded_extensions: Vec::new(),
             excluded_processes: Vec::new(),
@@ -382,6 +402,8 @@ impl Default for ProtectionPreferences {
 struct SentinelApp {
     page: Page,
     target: Option<PathBuf>,
+    available_drives: Vec<ScanDriveOption>,
+    scan_target_label: String,
     hdb_path: Option<PathBuf>,
     hsb_path: Option<PathBuf>,
     quarantine_dir: PathBuf,
@@ -442,6 +464,8 @@ impl SentinelApp {
         let mut app = Self {
             page: Page::Dashboard,
             target: None,
+            available_drives: enumerate_scan_drives(),
+            scan_target_label: "Unknown".to_string(),
             hdb_path: None,
             hsb_path: None,
             quarantine_dir,
@@ -708,7 +732,12 @@ impl SentinelApp {
     }
 
     fn refresh_metrics(&mut self) {
-        if self.last_metrics_refresh.elapsed() < Duration::from_millis(900) {
+        let refresh_interval = if self.protection_snapshot.game_mode_active {
+            Duration::from_secs(4)
+        } else {
+            Duration::from_millis(900)
+        };
+        if self.last_metrics_refresh.elapsed() < refresh_interval {
             return;
         }
 
@@ -746,10 +775,70 @@ impl SentinelApp {
         self.last_metrics_refresh = Instant::now();
     }
 
-    fn start_scan(&mut self) {
-        let Some(target) = self.target.clone() else {
-            self.status_text = "Select a file or folder first".to_string();
+    fn refresh_scan_drives(&mut self) {
+        let selected: Vec<PathBuf> = self
+            .available_drives
+            .iter()
+            .filter(|drive| drive.selected)
+            .map(|drive| drive.path.clone())
+            .collect();
+        self.available_drives = enumerate_scan_drives();
+        for drive in &mut self.available_drives {
+            drive.selected = selected.iter().any(|path| path == &drive.path);
+        }
+    }
+
+    fn set_game_mode(&mut self, enabled: bool) {
+        let exe = service_executable_path();
+        if !exe.is_file() {
+            self.status_text = "Protection service executable was not found.".to_string();
             return;
+        }
+
+        let args = vec![
+            "config".to_string(),
+            "apply-restart".to_string(),
+            format!("game_mode={enabled}"),
+        ];
+
+        match run_elevated_hidden(&exe, &args) {
+            Ok(()) => {
+                self.protection_preferences.enable_game_mode = enabled;
+                self.last_service_refresh = Instant::now() - Duration::from_secs(10);
+                self.status_text = if enabled {
+                    "Game Mode requested — background protection is being reduced.".to_string()
+                } else {
+                    "Game Mode disabled — full background protection is being restored.".to_string()
+                };
+            }
+            Err(err) => {
+                self.status_text = format!("Could not change Game Mode: {err}");
+            }
+        }
+    }
+
+    fn start_scan(&mut self) {
+        let mut targets: Vec<PathBuf> = self
+            .available_drives
+            .iter()
+            .filter(|drive| drive.selected)
+            .map(|drive| drive.path.clone())
+            .collect();
+        if let Some(target) = self.target.clone() {
+            targets.push(target);
+        }
+        targets.sort();
+        targets.dedup();
+
+        if targets.is_empty() {
+            self.status_text = "Select a file, folder, or at least one system drive first".to_string();
+            return;
+        }
+
+        self.scan_target_label = if targets.len() == 1 {
+            targets[0].display().to_string()
+        } else {
+            format!("{} selected targets", targets.len())
         };
 
         self.reports.clear();
@@ -762,7 +851,7 @@ impl SentinelApp {
         self.scanning = true;
         self.show_report = false;
         self.scan_started = Some(Instant::now());
-        self.status_text = format!("Preparing scan for {}", target.display());
+        self.status_text = format!("Preparing scan for {}", self.scan_target_label);
 
         let hdb = self.hdb_path.clone();
         let hsb = self.hsb_path.clone();
@@ -790,7 +879,16 @@ impl SentinelApp {
                 None
             };
 
-            let files = collect_scan_targets(&target, &cancel);
+            let mut files = Vec::new();
+            for target in &targets {
+                if cancel.load(Ordering::Relaxed) {
+                    break;
+                }
+                files.extend(collect_scan_targets(target, &cancel));
+            }
+            files.sort();
+            files.dedup();
+
             let cancelled_before_scan = cancel.load(Ordering::Relaxed);
             let _ = tx.send(WorkerMessage::Started(files.len()));
 
@@ -860,11 +958,7 @@ impl SentinelApp {
                         .map(|start| start.elapsed())
                         .unwrap_or_default();
 
-                    let target = self
-                        .target
-                        .as_ref()
-                        .map(|path| path.display().to_string())
-                        .unwrap_or_else(|| "Unknown".to_string());
+                    let target = self.scan_target_label.clone();
 
                     self.last_summary = Some(ScanSummary {
                         target,
@@ -1046,6 +1140,7 @@ impl SentinelApp {
         self.nav_button(ui, Page::Quarantine, "▣", "Quarantine");
         self.nav_button(ui, Page::History, "◷", "History");
         self.nav_button(ui, Page::Settings, "⚙", "Settings");
+        self.nav_button(ui, Page::About, "ⓘ", "About");
 
         ui.with_layout(egui::Layout::bottom_up(egui::Align::LEFT), |ui| {
             ui.add_space(8.0);
@@ -1055,7 +1150,7 @@ impl SentinelApp {
                     .color(ui.visuals().weak_text_color()),
             );
             ui.label(
-                egui::RichText::new("Crack/license-bypass ignored by default")
+                egui::RichText::new("BDFR Sentinel • Endpoint Security")
                     .size(11.0)
                     .color(ui.visuals().weak_text_color()),
             );
@@ -1141,6 +1236,69 @@ impl SentinelApp {
                     });
                 });
             });
+
+        ui.add_space(14.0);
+
+        ui.columns(2, |columns| {
+            settings_card(&mut columns[0], "Game Mode", |ui| {
+                let active = self.protection_snapshot.game_mode_active;
+                ui.label(
+                    egui::RichText::new(if active {
+                        "Gaming optimization is active"
+                    } else {
+                        "Full protection performance profile"
+                    })
+                    .strong()
+                    .color(if active { GOOD } else { ui.visuals().text_color() }),
+                );
+                ui.label(
+                    egui::RichText::new(
+                        "Keeps essential real-time, firewall and ransomware defenses while reducing background work.",
+                    )
+                    .size(11.0)
+                    .color(ui.visuals().weak_text_color()),
+                );
+                ui.add_space(6.0);
+                if fluent_button(
+                    ui,
+                    if active { "Disable Game Mode" } else { "Enable Game Mode" },
+                    false,
+                )
+                .clicked()
+                {
+                    self.set_game_mode(!active);
+                }
+            });
+
+            settings_card(&mut columns[1], "Advanced Anti-Ransomware", |ui| {
+                let active = self.protection_snapshot.ransomware_active;
+                ui.label(
+                    egui::RichText::new(if active {
+                        "Protected"
+                    } else {
+                        "Protection disabled"
+                    })
+                    .strong()
+                    .color(if active { GOOD } else { WARN }),
+                );
+                ui.label(format!(
+                    "{} protected folder(s) • {} heuristics",
+                    self.protection_preferences.ransomware_protected_paths.len(),
+                    if self.protection_snapshot.ransomware_aggressive {
+                        "Aggressive"
+                    } else {
+                        "Balanced"
+                    }
+                ));
+                ui.label(
+                    egui::RichText::new(
+                        "Monitors rapid create/modify/delete bursts across protected folders and scores ransomware-like behavior.",
+                    )
+                    .size(11.0)
+                    .color(ui.visuals().weak_text_color()),
+                );
+            });
+        });
 
         ui.add_space(14.0);
 
@@ -1390,11 +1548,11 @@ impl SentinelApp {
     fn scan_page(&mut self, ui: &mut egui::Ui) {
         page_header(
             ui,
-            "Scan",
-            "Choose a file or folder and inspect it with the active detection engines.",
+            "Scan center",
+            "Scan a custom target or select one or more system drives for a broader inspection.",
         );
 
-        settings_card(ui, "Scan target", |ui| {
+        settings_card(ui, "Custom target", |ui| {
             ui.horizontal_wrapped(|ui| {
                 if fluent_button(ui, "Choose file", false).clicked() {
                     self.target = rfd::FileDialog::new().pick_file();
@@ -1402,36 +1560,118 @@ impl SentinelApp {
                 if fluent_button(ui, "Choose folder", false).clicked() {
                     self.target = rfd::FileDialog::new().pick_folder();
                 }
+                if self.target.is_some() && fluent_button(ui, "Clear custom target", false).clicked() {
+                    self.target = None;
+                }
+            });
 
+            if let Some(target) = &self.target {
+                ui.add_space(8.0);
+                ui.label(
+                    egui::RichText::new(format!("Selected: {}", target.display()))
+                        .strong()
+                        .color(ui.visuals().hyperlink_color),
+                );
+            } else {
+                ui.label(
+                    egui::RichText::new("No custom file or folder selected.")
+                        .color(ui.visuals().weak_text_color()),
+                );
+            }
+        });
+
+        ui.add_space(12.0);
+        settings_card(ui, "System drives", |ui| {
+            ui.horizontal_wrapped(|ui| {
+                if fluent_button(ui, "Refresh drives", false).clicked() {
+                    self.refresh_scan_drives();
+                }
+                if fluent_button(ui, "Select all", false).clicked() {
+                    for drive in &mut self.available_drives {
+                        drive.selected = true;
+                    }
+                }
+                if fluent_button(ui, "Clear", false).clicked() {
+                    for drive in &mut self.available_drives {
+                        drive.selected = false;
+                    }
+                }
+            });
+            ui.add_space(8.0);
+
+            if self.available_drives.is_empty() {
+                ui.label(
+                    egui::RichText::new("No mounted drive roots were detected.")
+                        .color(WARN),
+                );
+            } else {
+                ui.horizontal_wrapped(|ui| {
+                    for drive in &mut self.available_drives {
+                        let label = format!("{}  Drive", drive.path.display());
+                        ui.add(
+                            egui::Checkbox::new(&mut drive.selected, label)
+                                .indeterminate(false),
+                        );
+                        ui.add_space(8.0);
+                    }
+                });
+            }
+
+            ui.label(
+                egui::RichText::new(
+                    "Selected drives are scanned together with the custom target. Duplicate files are de-duplicated before scanning.",
+                )
+                .size(11.0)
+                .color(ui.visuals().weak_text_color()),
+            );
+        });
+
+        ui.add_space(12.0);
+        settings_card(ui, "Scan controls", |ui| {
+            let has_target =
+                self.target.is_some() || self.available_drives.iter().any(|drive| drive.selected);
+
+            ui.horizontal_wrapped(|ui| {
                 if self.scanning {
                     if fluent_button(ui, "Cancel scan", true).clicked() {
                         self.cancel_scan();
                     }
                 } else if ui
                     .add_enabled(
-                        self.target.is_some(),
-                        egui::Button::new(egui::RichText::new("Start scan").size(15.0))
-                            .fill(egui::Color32::from_rgb(0, 95, 184))
-                            .corner_radius(8.0)
-                            .min_size(egui::vec2(120.0, 42.0)),
+                        has_target,
+                        egui::Button::new(egui::RichText::new("Start scan").size(15.0).strong())
+                            .fill(ui.visuals().hyperlink_color)
+                            .corner_radius(9.0)
+                            .min_size(egui::vec2(140.0, 44.0)),
                     )
                     .clicked()
                 {
                     self.start_scan();
                 }
+
+                ui.checkbox(
+                    &mut self.auto_quarantine,
+                    "Automatically quarantine confirmed malicious verdicts",
+                );
             });
 
-            if let Some(target) = &self.target {
-                ui.add_space(6.0);
-                ui.label(
-                    egui::RichText::new(target.display().to_string())
-                        .color(ui.visuals().weak_text_color()),
-                );
-            }
-
-            ui.checkbox(
-                &mut self.auto_quarantine,
-                "Automatically quarantine confirmed malicious verdicts",
+            let drive_count = self
+                .available_drives
+                .iter()
+                .filter(|drive| drive.selected)
+                .count();
+            ui.label(
+                egui::RichText::new(format!(
+                    "{} drive target(s) selected{}",
+                    drive_count,
+                    if self.target.is_some() {
+                        " + custom target"
+                    } else {
+                        ""
+                    }
+                ))
+                .size(11.0)
+                .color(ui.visuals().weak_text_color()),
             );
         });
 
@@ -1770,8 +2010,62 @@ impl SentinelApp {
             );
             ui.checkbox(
                 &mut self.protection_preferences.enable_ransomware_shield,
-                "Ransomware Shield / mass file-change protection",
+                "Advanced Anti-Ransomware / mass file-change protection",
             );
+            ui.checkbox(
+                &mut self.protection_preferences.ransomware_aggressive,
+                "Aggressive ransomware heuristics (faster response, higher sensitivity)",
+            );
+            ui.checkbox(
+                &mut self.protection_preferences.enable_game_mode,
+                "Game Mode — minimize Sentinel background CPU activity while gaming",
+            );
+            ui.label(
+                egui::RichText::new(
+                    "Game Mode keeps real-time file protection, WFP firewall and Anti-Ransomware active while pausing heavier telemetry, updates and scheduled scans.",
+                )
+                .size(11.0)
+                .color(ui.visuals().weak_text_color()),
+            );
+
+            ui.add_space(8.0);
+            ui.label(egui::RichText::new("Ransomware protected folders").strong());
+            ui.horizontal_wrapped(|ui| {
+                if fluent_button(ui, "Add protected folder", false).clicked() {
+                    if let Some(path) = rfd::FileDialog::new().pick_folder() {
+                        if !self
+                            .protection_preferences
+                            .ransomware_protected_paths
+                            .iter()
+                            .any(|item| item == &path)
+                        {
+                            self.protection_preferences
+                                .ransomware_protected_paths
+                                .push(path);
+                        }
+                    }
+                }
+            });
+            let mut remove_ransomware_path = None;
+            for (index, path) in self
+                .protection_preferences
+                .ransomware_protected_paths
+                .iter()
+                .enumerate()
+            {
+                ui.horizontal(|ui| {
+                    ui.label(path.display().to_string());
+                    if ui.small_button("Remove").clicked() {
+                        remove_ransomware_path = Some(index);
+                    }
+                });
+            }
+            if let Some(index) = remove_ransomware_path {
+                self.protection_preferences
+                    .ransomware_protected_paths
+                    .remove(index);
+            }
+
             ui.checkbox(
                 &mut self.protection_preferences.enable_usb_protection,
                 "USB / removable drive quick protection",
@@ -2225,6 +2519,87 @@ impl SentinelApp {
         });
     }
 
+    fn about_page(&mut self, ui: &mut egui::Ui) {
+        page_header(
+            ui,
+            "About BDFR Sentinel",
+            "A modular Windows endpoint-security platform built around low-overhead, layered protection.",
+        );
+
+        settings_card(ui, "BDFR Sentinel", |ui| {
+            ui.horizontal(|ui| {
+                ui.label(
+                    egui::RichText::new("◉")
+                        .size(54.0)
+                        .color(ui.visuals().hyperlink_color),
+                );
+                ui.vertical(|ui| {
+                    ui.label(egui::RichText::new("BDFR Sentinel").size(26.0).strong());
+                    ui.label(
+                        egui::RichText::new("Endpoint Security Platform")
+                            .size(15.0)
+                            .color(ui.visuals().weak_text_color()),
+                    );
+                    ui.label(format!("Version {}", env!("CARGO_PKG_VERSION")));
+                });
+            });
+        });
+
+        ui.add_space(14.0);
+        ui.columns(2, |columns| {
+            settings_card(&mut columns[0], "Protection stack", |ui| {
+                for item in [
+                    "Real-time file protection",
+                    "YARA-X + static PE analysis",
+                    "AMSI + behavior telemetry",
+                    "WFP kernel firewall",
+                    "Advanced Anti-Ransomware",
+                    "USB / removable protection",
+                    "Encrypted quarantine",
+                ] {
+                    ui.label(format!("✓ {item}"));
+                }
+            });
+
+            settings_card(&mut columns[1], "Runtime", |ui| {
+                status_row(
+                    ui,
+                    "Protection service",
+                    &self.service_state,
+                    if self.service_state.contains("Running") { GOOD } else { WARN },
+                );
+                status_row(
+                    ui,
+                    "Game Mode",
+                    if self.protection_snapshot.game_mode_active { "Active" } else { "Off" },
+                    if self.protection_snapshot.game_mode_active { GOOD } else { ui.visuals().weak_text_color() },
+                );
+                status_row(
+                    ui,
+                    "Anti-Ransomware",
+                    if self.protection_snapshot.ransomware_active { "Active" } else { "Off" },
+                    if self.protection_snapshot.ransomware_active { GOOD } else { WARN },
+                );
+            });
+        });
+
+        ui.add_space(14.0);
+        settings_card(ui, "Project", |ui| {
+            ui.label("Publisher: BDFR");
+            ui.label("License: GPL-2.0");
+            ui.hyperlink_to(
+                "Open BDFR Sentinel repository",
+                "https://github.com/lyingtiger88/BDFR_Sentinel",
+            );
+            ui.label(
+                egui::RichText::new(
+                    "Designed for layered protection with a Windows-native service, event-driven telemetry and kernel-backed network enforcement.",
+                )
+                .color(ui.visuals().weak_text_color()),
+            );
+        });
+    }
+
     fn self_test_window(&mut self, ctx: &egui::Context) {
         if !self.show_self_test {
             return;
@@ -2362,6 +2737,8 @@ impl eframe::App for SentinelApp {
 
         if self.scanning || self.pending_realtime_target.is_some() {
             ctx.request_repaint_after(Duration::from_millis(200));
+        } else if self.protection_snapshot.game_mode_active {
+            ctx.request_repaint_after(Duration::from_millis(2500));
         } else {
             ctx.request_repaint_after(Duration::from_millis(900));
         }
@@ -2424,6 +2801,7 @@ impl eframe::App for SentinelApp {
                 Page::Quarantine => self.quarantine_page(ui),
                 Page::History => self.history_page(ui),
                 Page::Settings => self.settings_page(ui),
+                Page::About => self.about_page(ui),
             });
 
         self.report_window(ctx);
@@ -2717,6 +3095,31 @@ fn service_executable_path() -> PathBuf {
         .parent()
         .unwrap_or_else(|| Path::new("."))
         .join("bdfr-sentinel-service.exe")
+}
+
+fn enumerate_scan_drives() -> Vec<ScanDriveOption> {
+    #[cfg(windows)]
+    {
+        let mut drives = Vec::new();
+        for letter in b'A'..=b'Z' {
+            let path = PathBuf::from(format!("{}:\\", letter as char));
+            if path.exists() {
+                drives.push(ScanDriveOption {
+                    path,
+                    selected: false,
+                });
+            }
+        }
+        drives
+    }
+
+    #[cfg(not(windows))]
+    {
+        vec![ScanDriveOption {
+            path: PathBuf::from("/"),
+            selected: false,
+        }]
+    }
 }
 
 fn default_quarantine_dir() -> PathBuf {
