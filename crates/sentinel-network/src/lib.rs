@@ -78,6 +78,77 @@ fn default_true() -> bool {
     true
 }
 
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LiveConnection {
+    pub protocol: String,
+    pub local_address: String,
+    pub remote_address: String,
+    pub state: String,
+    pub pid: Option<u32>,
+}
+
+fn parse_netstat_connection(line: &str) -> Option<LiveConnection> {
+    let fields: Vec<&str> = line.split_whitespace().collect();
+    let protocol = fields.first()?.to_ascii_uppercase();
+    match protocol.as_str() {
+        "TCP" if fields.len() >= 5 => Some(LiveConnection {
+            protocol,
+            local_address: fields[1].to_string(),
+            remote_address: fields[2].to_string(),
+            state: fields[3].to_string(),
+            pid: fields[4].parse().ok(),
+        }),
+        "UDP" if fields.len() >= 4 => Some(LiveConnection {
+            protocol,
+            local_address: fields[1].to_string(),
+            remote_address: fields[2].to_string(),
+            state: "STATELESS".to_string(),
+            pid: fields[3].parse().ok(),
+        }),
+        _ => None,
+    }
+}
+
+#[cfg(windows)]
+pub fn query_live_connections() -> Result<Vec<LiveConnection>, std::io::Error> {
+    use std::os::windows::process::CommandExt;
+    use std::process::Command;
+
+    const CREATE_NO_WINDOW: u32 = 0x08000000;
+    let output = Command::new("netstat")
+        .args(["-ano"])
+        .creation_flags(CREATE_NO_WINDOW)
+        .output()?;
+
+    if !output.status.success() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::Other,
+            "netstat failed while enumerating live connections",
+        ));
+    }
+
+    let text = String::from_utf8_lossy(&output.stdout);
+    let mut rows: Vec<LiveConnection> = text
+        .lines()
+        .filter_map(parse_netstat_connection)
+        .collect();
+    rows.sort_by(|a, b| {
+        a.protocol
+            .cmp(&b.protocol)
+            .then(a.state.cmp(&b.state))
+            .then(a.local_address.cmp(&b.local_address))
+            .then(a.remote_address.cmp(&b.remote_address))
+    });
+    rows.dedup();
+    Ok(rows)
+}
+
+#[cfg(not(windows))]
+pub fn query_live_connections() -> Result<Vec<LiveConnection>, std::io::Error> {
+    Ok(Vec::new())
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct NetworkBlocklist {
     entries: Vec<IpNet>,
@@ -564,6 +635,25 @@ mod tests {
         .compact();
 
         assert_eq!(list.len(), 2);
+    }
+
+    #[test]
+    fn parses_windows_tcp_and_udp_netstat_rows() {
+        let tcp = parse_netstat_connection(
+            "  TCP    127.0.0.1:5354    127.0.0.1:49722    ESTABLISHED    4321",
+        )
+        .unwrap();
+        assert_eq!(tcp.protocol, "TCP");
+        assert_eq!(tcp.state, "ESTABLISHED");
+        assert_eq!(tcp.pid, Some(4321));
+
+        let udp = parse_netstat_connection(
+            "  UDP    0.0.0.0:5353    *:*    999",
+        )
+        .unwrap();
+        assert_eq!(udp.protocol, "UDP");
+        assert_eq!(udp.state, "STATELESS");
+        assert_eq!(udp.pid, Some(999));
     }
 
     #[test]
