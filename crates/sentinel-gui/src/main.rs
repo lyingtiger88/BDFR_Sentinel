@@ -144,7 +144,9 @@ fn ui_preferences_path() -> PathBuf {
     let base = std::env::var_os("APPDATA")
         .map(PathBuf::from)
         .unwrap_or_else(std::env::temp_dir);
-    base.join("BDFR").join("Sentinel").join("ui-preferences.json")
+    base.join("BDFR")
+        .join("Sentinel")
+        .join("ui-preferences.json")
 }
 
 fn user_skin_dir() -> PathBuf {
@@ -240,7 +242,14 @@ fn skin_file_name(name: &str) -> String {
         .collect::<String>()
         .trim_matches('-')
         .to_ascii_lowercase();
-    format!("{}.json", if sanitized.is_empty() { "custom-skin" } else { &sanitized })
+    format!(
+        "{}.json",
+        if sanitized.is_empty() {
+            "custom-skin"
+        } else {
+            &sanitized
+        }
+    )
 }
 
 #[cfg(windows)]
@@ -2281,11 +2290,7 @@ impl SentinelApp {
                     .width(210.0)
                     .show_ui(ui, |ui| {
                         for skin in &self.skins {
-                            ui.selectable_value(
-                                &mut selected_name,
-                                skin.name.clone(),
-                                &skin.name,
-                            );
+                            ui.selectable_value(&mut selected_name, skin.name.clone(), &skin.name);
                         }
                     });
 
@@ -2312,7 +2317,10 @@ impl SentinelApp {
                     ] {
                         egui::Frame::new()
                             .fill(rgb(color))
-                            .stroke(egui::Stroke::new(1.0, ui.visuals().widgets.noninteractive.bg_stroke.color))
+                            .stroke(egui::Stroke::new(
+                                1.0,
+                                ui.visuals().widgets.noninteractive.bg_stroke.color,
+                            ))
                             .corner_radius(6.0)
                             .inner_margin(egui::Margin::symmetric(8, 5))
                             .show(ui, |ui| {
@@ -2325,7 +2333,11 @@ impl SentinelApp {
                     egui::RichText::new(format!(
                         "{} palette • {} density • {} px control radius",
                         skin.mode.label(),
-                        if skin.compact { "Compact" } else { "Comfortable" },
+                        if skin.compact {
+                            "Compact"
+                        } else {
+                            "Comfortable"
+                        },
                         skin.corner_radius
                     ))
                     .size(11.0)
