@@ -1230,9 +1230,9 @@ impl SentinelApp {
         });
         ui.add_space(28.0);
 
-        self.nav_button(ui, Page::Dashboard, "⌂", "Dashboard");
+        self.nav_button(ui, Page::Dashboard, "▦", "Dashboard");
         self.nav_button(ui, Page::Scan, "⌕", "Scan");
-        self.nav_button(ui, Page::Quarantine, "▣", "Quarantine");
+        self.nav_button(ui, Page::Quarantine, "⛨", "Quarantine");
         self.nav_button(ui, Page::History, "◷", "History");
         self.nav_button(ui, Page::Settings, "⚙", "Settings");
         self.nav_button(ui, Page::About, "ⓘ", "About");
@@ -1255,6 +1255,7 @@ impl SentinelApp {
     fn dashboard(&mut self, ui: &mut egui::Ui) {
         page_header(
             ui,
+            "▦",
             "Security dashboard",
             "A quick view of protection, scan activity and system load.",
         );
@@ -1643,6 +1644,7 @@ impl SentinelApp {
     fn scan_page(&mut self, ui: &mut egui::Ui) {
         page_header(
             ui,
+            "⌕",
             "Scan center",
             "Scan a custom target or select one or more system drives for a broader inspection.",
         );
@@ -1860,6 +1862,7 @@ impl SentinelApp {
     fn quarantine_page(&mut self, ui: &mut egui::Ui) {
         page_header(
             ui,
+            "⛨",
             "Quarantine",
             "Review isolated files, restore trusted items or remove them permanently.",
         );
@@ -1930,6 +1933,7 @@ impl SentinelApp {
     fn history_page(&mut self, ui: &mut egui::Ui) {
         page_header(
             ui,
+            "◷",
             "Threat history",
             "Review blocks, quarantines and protection events recorded by the service.",
         );
@@ -2009,6 +2013,7 @@ impl SentinelApp {
 
         page_header(
             ui,
+            "⚙",
             "Settings",
             "Configure definition sources and detection behavior.",
         );
@@ -2615,6 +2620,7 @@ impl SentinelApp {
     fn about_page(&mut self, ui: &mut egui::Ui) {
         page_header(
             ui,
+            "ⓘ",
             "About BDFR Sentinel",
             "A modular Windows endpoint-security platform built around low-overhead, layered protection.",
         );
@@ -2946,13 +2952,34 @@ fn collect_scan_targets(target: &Path, cancel: &AtomicBool) -> Vec<PathBuf> {
     files
 }
 
-fn page_header(ui: &mut egui::Ui, title: &str, subtitle: &str) {
-    ui.label(egui::RichText::new(title).size(30.0).strong());
-    ui.label(
-        egui::RichText::new(subtitle)
-            .size(13.0)
-            .color(ui.visuals().weak_text_color()),
-    );
+fn page_header(ui: &mut egui::Ui, icon: &str, title: &str, subtitle: &str) {
+    ui.horizontal(|ui| {
+        egui::Frame::new()
+            .fill(ui.visuals().widgets.active.bg_fill)
+            .corner_radius(12.0)
+            .inner_margin(egui::Margin::same(10))
+            .show(ui, |ui| {
+                ui.set_min_size(egui::vec2(34.0, 34.0));
+                ui.centered_and_justified(|ui| {
+                    ui.label(
+                        egui::RichText::new(icon)
+                            .size(25.0)
+                            .strong()
+                            .color(ui.visuals().hyperlink_color),
+                    );
+                });
+            });
+
+        ui.add_space(4.0);
+        ui.vertical(|ui| {
+            ui.label(egui::RichText::new(title).size(30.0).strong());
+            ui.label(
+                egui::RichText::new(subtitle)
+                    .size(13.0)
+                    .color(ui.visuals().weak_text_color()),
+            );
+        });
+    });
     ui.add_space(18.0);
 }
 
