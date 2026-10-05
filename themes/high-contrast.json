@@ -1,0 +1,36 @@
+{
+  "name": "High Contrast",
+  "mode": "dark",
+  "accent": [
+    0,
+    220,
+    255
+  ],
+  "background": [
+    0,
+    0,
+    0
+  ],
+  "sidebar": [
+    0,
+    0,
+    0
+  ],
+  "panel": [
+    18,
+    18,
+    18
+  ],
+  "panel_hover": [
+    38,
+    38,
+    38
+  ],
+  "text": [
+    255,
+    255,
+    255
+  ],
+  "corner_radius": 4,
+  "compact": true
+}
