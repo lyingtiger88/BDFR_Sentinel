@@ -1,0 +1,36 @@
+{
+  "name": "Obsidian",
+  "mode": "dark",
+  "accent": [
+    55,
+    150,
+    255
+  ],
+  "background": [
+    10,
+    13,
+    18
+  ],
+  "sidebar": [
+    7,
+    10,
+    15
+  ],
+  "panel": [
+    20,
+    25,
+    33
+  ],
+  "panel_hover": [
+    29,
+    37,
+    49
+  ],
+  "text": [
+    238,
+    243,
+    250
+  ],
+  "corner_radius": 12,
+  "compact": false
+}
