@@ -1,0 +1,36 @@
+{
+  "name": "Graphite",
+  "mode": "dark",
+  "accent": [
+    174,
+    186,
+    198
+  ],
+  "background": [
+    26,
+    28,
+    31
+  ],
+  "sidebar": [
+    20,
+    22,
+    25
+  ],
+  "panel": [
+    37,
+    40,
+    44
+  ],
+  "panel_hover": [
+    50,
+    54,
+    59
+  ],
+  "text": [
+    240,
+    240,
+    240
+  ],
+  "corner_radius": 8,
+  "compact": true
+}
