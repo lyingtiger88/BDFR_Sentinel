@@ -78,7 +78,6 @@ fn default_true() -> bool {
     true
 }
 
-
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LiveConnection {
     pub protocol: String,
@@ -129,10 +128,7 @@ pub fn query_live_connections() -> Result<Vec<LiveConnection>, std::io::Error> {
     }
 
     let text = String::from_utf8_lossy(&output.stdout);
-    let mut rows: Vec<LiveConnection> = text
-        .lines()
-        .filter_map(parse_netstat_connection)
-        .collect();
+    let mut rows: Vec<LiveConnection> = text.lines().filter_map(parse_netstat_connection).collect();
     rows.sort_by(|a, b| {
         a.protocol
             .cmp(&b.protocol)
@@ -647,10 +643,7 @@ mod tests {
         assert_eq!(tcp.state, "ESTABLISHED");
         assert_eq!(tcp.pid, Some(4321));
 
-        let udp = parse_netstat_connection(
-            "  UDP    0.0.0.0:5353    *:*    999",
-        )
-        .unwrap();
+        let udp = parse_netstat_connection("  UDP    0.0.0.0:5353    *:*    999").unwrap();
         assert_eq!(udp.protocol, "UDP");
         assert_eq!(udp.state, "STATELESS");
         assert_eq!(udp.pid, Some(999));
