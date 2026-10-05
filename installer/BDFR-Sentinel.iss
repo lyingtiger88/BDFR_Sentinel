@@ -17,6 +17,7 @@ ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 OutputDir=output
 OutputBaseFilename=BDFR-Sentinel-Setup-x64
+SetupIconFile=..\assets\sentinel.ico
 Compression=lzma2/max
 SolidCompression=yes
 WizardStyle=modern
@@ -26,6 +27,9 @@ CloseApplications=yes
 RestartApplications=no
 SetupLogging=yes
 MinVersion=10.0.17763
+VersionInfoCompany=BDFR
+VersionInfoDescription=BDFR Sentinel Endpoint Security Setup
+VersionInfoProductName=BDFR Sentinel
 
 [Files]
 Source: "..\target\release\bdfr-sentinel-gui.exe"; DestDir: "{app}"; Flags: ignoreversion

@@ -3,6 +3,8 @@ name = "bdfr-sentinel-service"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+build = "build.rs"
+description = "BDFR Sentinel Windows protection service"
 
 [[bin]]
 name = "bdfr-sentinel-service"
@@ -35,3 +37,6 @@ sentinel-reputation = { path = "../sentinel-reputation" }
 sentinel-ransomware = { path = "../sentinel-ransomware" }
 sentinel-removable = { path = "../sentinel-removable" }
 sentinel-network = { path = "../sentinel-network" }
+
+[target.'cfg(windows)'.build-dependencies]
+winresource = "0.1.31"

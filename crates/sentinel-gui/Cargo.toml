@@ -3,6 +3,8 @@ name = "bdfr-sentinel-gui"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+build = "build.rs"
+description = "BDFR Sentinel graphical endpoint security console"
 
 [[bin]]
 name = "bdfr-sentinel-gui"
@@ -22,3 +24,6 @@ sentinel-definitions = { path = "../sentinel-definitions" }
 sentinel-pe = { path = "../sentinel-pe" }
 sentinel-quarantine = { path = "../sentinel-quarantine" }
 sentinel-network = { path = "../sentinel-network" }
+
+[target.'cfg(windows)'.build-dependencies]
+winresource = "0.1.31"
