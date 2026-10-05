@@ -2318,7 +2318,7 @@ impl SentinelApp {
                         egui::Frame::new()
                             .fill(rgb(color))
                             .stroke(egui::Stroke::new(
-                                1.0,
+                                1.0_f32,
                                 ui.visuals().widgets.noninteractive.bg_stroke.color,
                             ))
                             .corner_radius(6.0)
