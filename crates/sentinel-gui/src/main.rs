@@ -1426,38 +1426,60 @@ impl SentinelApp {
         }
     }
 
-    fn nav_button(&mut self, ui: &mut egui::Ui, page: Page, icon: &str, label: &str) {
+    fn nav_button(&mut self, ui: &mut egui::Ui, page: Page, label: &str) {
         let selected = self.page == page;
-        let text = egui::RichText::new(format!("{icon}   {label}"))
-            .size(17.0)
-            .color(ui.visuals().text_color());
+        let desired = egui::vec2(210.0, 50.0);
+        let (rect, response) = ui.allocate_exact_size(desired, egui::Sense::click());
 
-        let button = egui::Button::new(text)
-            .fill(if selected {
-                ui.visuals().widgets.active.bg_fill
+        let fill = if selected {
+            ui.visuals().widgets.active.bg_fill
+        } else if response.hovered() {
+            ui.visuals().widgets.hovered.bg_fill
+        } else {
+            egui::Color32::TRANSPARENT
+        };
+
+        ui.painter().rect_filled(rect, 8.0, fill);
+
+        if selected {
+            ui.painter().rect_filled(
+                egui::Rect::from_min_max(
+                    egui::pos2(rect.left() + 1.0, rect.top() + 8.0),
+                    egui::pos2(rect.left() + 4.0, rect.bottom() - 8.0),
+                ),
+                2.0,
+                ui.visuals().hyperlink_color,
+            );
+        }
+
+        let icon_rect = egui::Rect::from_center_size(
+            egui::pos2(rect.left() + 24.0, rect.center().y),
+            egui::vec2(22.0, 22.0),
+        );
+        draw_page_icon(
+            ui.painter(),
+            page,
+            icon_rect,
+            if selected {
+                ui.visuals().hyperlink_color
             } else {
-                egui::Color32::TRANSPARENT
-            })
-            .stroke(egui::Stroke::NONE)
-            .corner_radius(8.0)
-            .min_size(egui::vec2(210.0, 50.0));
+                ui.visuals().text_color()
+            },
+        );
 
-        if ui.add(button).clicked() {
+        ui.painter().text(
+            egui::pos2(rect.left() + 46.0, rect.center().y),
+            egui::Align2::LEFT_CENTER,
+            label,
+            egui::FontId::proportional(17.0),
+            ui.visuals().text_color(),
+        );
+
+        if response.clicked() {
             self.page = page;
         }
 
-        if selected {
-            let rect = ui.min_rect();
-            let painter = ui.painter();
-            let x = rect.left() + 2.0;
-            painter.line_segment(
-                [
-                    egui::pos2(x, rect.bottom() - 45.0),
-                    egui::pos2(x, rect.bottom() - 9.0),
-                ],
-                egui::Stroke::new(3.0_f32, ui.visuals().hyperlink_color),
-            );
-        }
+        response.on_hover_cursor(egui::CursorIcon::PointingHand);
     }
 
     fn sidebar(&mut self, ui: &mut egui::Ui) {
@@ -1479,12 +1501,12 @@ impl SentinelApp {
         });
         ui.add_space(28.0);
 
-        self.nav_button(ui, Page::Dashboard, "▦", "Dashboard");
-        self.nav_button(ui, Page::Scan, "⌕", "Scan");
-        self.nav_button(ui, Page::Quarantine, "⛨", "Quarantine");
-        self.nav_button(ui, Page::History, "◷", "History");
-        self.nav_button(ui, Page::Settings, "⚙", "Settings");
-        self.nav_button(ui, Page::About, "ⓘ", "About");
+        self.nav_button(ui, Page::Dashboard, "Dashboard");
+        self.nav_button(ui, Page::Scan, "Scan");
+        self.nav_button(ui, Page::Quarantine, "Quarantine");
+        self.nav_button(ui, Page::History, "History");
+        self.nav_button(ui, Page::Settings, "Settings");
+        self.nav_button(ui, Page::About, "About");
 
         ui.with_layout(egui::Layout::bottom_up(egui::Align::LEFT), |ui| {
             ui.add_space(8.0);
@@ -1504,7 +1526,7 @@ impl SentinelApp {
     fn dashboard(&mut self, ui: &mut egui::Ui) {
         page_header(
             ui,
-            "▦",
+            Page::Dashboard,
             "Security dashboard",
             "A quick view of protection, scan activity and system load.",
         );
@@ -1893,7 +1915,7 @@ impl SentinelApp {
     fn scan_page(&mut self, ui: &mut egui::Ui) {
         page_header(
             ui,
-            "⌕",
+            Page::Scan,
             "Scan center",
             "Scan a custom target or select one or more system drives for a broader inspection.",
         );
@@ -2111,7 +2133,7 @@ impl SentinelApp {
     fn quarantine_page(&mut self, ui: &mut egui::Ui) {
         page_header(
             ui,
-            "⛨",
+            Page::Quarantine,
             "Quarantine",
             "Review isolated files, restore trusted items or remove them permanently.",
         );
@@ -2182,7 +2204,7 @@ impl SentinelApp {
     fn history_page(&mut self, ui: &mut egui::Ui) {
         page_header(
             ui,
-            "◷",
+            Page::History,
             "Threat history",
             "Review blocks, quarantines and protection events recorded by the service.",
         );
@@ -2262,7 +2284,7 @@ impl SentinelApp {
 
         page_header(
             ui,
-            "⚙",
+            Page::Settings,
             "Settings",
             "Customize Sentinel appearance, protection engines and detection behavior.",
         );
@@ -2911,7 +2933,7 @@ impl SentinelApp {
     fn about_page(&mut self, ui: &mut egui::Ui) {
         page_header(
             ui,
-            "ⓘ",
+            Page::About,
             "About BDFR Sentinel",
             "A modular Windows endpoint-security platform built around low-overhead, layered protection.",
         );
@@ -3243,35 +3265,137 @@ fn collect_scan_targets(target: &Path, cancel: &AtomicBool) -> Vec<PathBuf> {
     files
 }
 
-fn page_header(ui: &mut egui::Ui, icon: &str, title: &str, subtitle: &str) {
-    ui.horizontal(|ui| {
-        egui::Frame::new()
-            .fill(ui.visuals().widgets.active.bg_fill)
-            .corner_radius(12.0)
-            .inner_margin(egui::Margin::same(10))
-            .show(ui, |ui| {
-                ui.set_min_size(egui::vec2(34.0, 34.0));
-                ui.centered_and_justified(|ui| {
-                    ui.label(
-                        egui::RichText::new(icon)
-                            .size(25.0)
-                            .strong()
-                            .color(ui.visuals().hyperlink_color),
-                    );
-                });
-            });
+fn page_header(ui: &mut egui::Ui, page: Page, title: &str, subtitle: &str) {
+    let width = ui.available_width().max(240.0);
+    let header_height = 62.0;
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(width, header_height), egui::Sense::hover());
 
-        ui.add_space(4.0);
-        ui.vertical(|ui| {
-            ui.label(egui::RichText::new(title).size(30.0).strong());
-            ui.label(
-                egui::RichText::new(subtitle)
-                    .size(13.0)
-                    .color(ui.visuals().weak_text_color()),
+    let icon_rect = egui::Rect::from_center_size(
+        egui::pos2(rect.left() + 25.0, rect.top() + 25.0),
+        egui::vec2(44.0, 44.0),
+    );
+
+    ui.painter().rect_filled(
+        icon_rect,
+        11.0,
+        ui.visuals().widgets.active.bg_fill,
+    );
+    draw_page_icon(
+        ui.painter(),
+        page,
+        icon_rect.shrink(10.0),
+        ui.visuals().hyperlink_color,
+    );
+
+    let text_left = icon_rect.right() + 14.0;
+    ui.painter().text(
+        egui::pos2(text_left, rect.top() + 8.0),
+        egui::Align2::LEFT_TOP,
+        title,
+        egui::FontId::proportional(30.0),
+        ui.visuals().text_color(),
+    );
+    ui.painter().text(
+        egui::pos2(text_left, rect.top() + 43.0),
+        egui::Align2::LEFT_TOP,
+        subtitle,
+        egui::FontId::proportional(13.0),
+        ui.visuals().weak_text_color(),
+    );
+
+    ui.add_space(10.0);
+}
+
+fn draw_page_icon(
+    painter: &egui::Painter,
+    page: Page,
+    rect: egui::Rect,
+    color: egui::Color32,
+) {
+    let stroke = egui::Stroke::new(1.8_f32, color);
+    let c = rect.center();
+    let w = rect.width();
+    let h = rect.height();
+
+    match page {
+        Page::Dashboard => {
+            let gap = w * 0.14;
+            let cell = (w - gap) * 0.5;
+            for row in 0..2 {
+                for col in 0..2 {
+                    let min = egui::pos2(
+                        rect.left() + col as f32 * (cell + gap),
+                        rect.top() + row as f32 * (cell + gap),
+                    );
+                    painter.rect_stroke(
+                        egui::Rect::from_min_size(min, egui::vec2(cell, cell)),
+                        2.0,
+                        stroke,
+                        egui::StrokeKind::Inside,
+                    );
+                }
+            }
+        }
+        Page::Scan => {
+            let radius = w.min(h) * 0.30;
+            let center = egui::pos2(c.x - w * 0.08, c.y - h * 0.08);
+            painter.circle_stroke(center, radius, stroke);
+            let start = center + egui::vec2(radius * 0.72, radius * 0.72);
+            let end = start + egui::vec2(w * 0.28, h * 0.28);
+            painter.line_segment([start, end], stroke);
+        }
+        Page::Quarantine => {
+            let top = egui::pos2(c.x, rect.top());
+            let left = egui::pos2(rect.left() + w * 0.12, rect.top() + h * 0.22);
+            let right = egui::pos2(rect.right() - w * 0.12, rect.top() + h * 0.22);
+            let bottom = egui::pos2(c.x, rect.bottom());
+            painter.add(egui::Shape::closed_line(
+                vec![top, right, egui::pos2(rect.right() - w * 0.18, c.y + h * 0.18), bottom,
+                     egui::pos2(rect.left() + w * 0.18, c.y + h * 0.18), left],
+                stroke,
+            ));
+            painter.line_segment(
+                [
+                    egui::pos2(c.x - w * 0.14, c.y),
+                    egui::pos2(c.x - w * 0.02, c.y + h * 0.12),
+                ],
+                stroke,
             );
-        });
-    });
-    ui.add_space(18.0);
+            painter.line_segment(
+                [
+                    egui::pos2(c.x - w * 0.02, c.y + h * 0.12),
+                    egui::pos2(c.x + w * 0.18, c.y - h * 0.14),
+                ],
+                stroke,
+            );
+        }
+        Page::History => {
+            painter.circle_stroke(c, w.min(h) * 0.43, stroke);
+            painter.line_segment([c, egui::pos2(c.x, rect.top() + h * 0.22)], stroke);
+            painter.line_segment([c, egui::pos2(c.x + w * 0.22, c.y)], stroke);
+        }
+        Page::Settings => {
+            painter.circle_stroke(c, w.min(h) * 0.18, stroke);
+            for i in 0..8 {
+                let angle = i as f32 * std::f32::consts::TAU / 8.0;
+                let dir = egui::vec2(angle.cos(), angle.sin());
+                let a = c + dir * (w * 0.30);
+                let b = c + dir * (w * 0.46);
+                painter.line_segment([a, b], stroke);
+            }
+        }
+        Page::About => {
+            painter.circle_stroke(c, w.min(h) * 0.43, stroke);
+            painter.circle_filled(egui::pos2(c.x, c.y - h * 0.18), w * 0.045, color);
+            painter.line_segment(
+                [
+                    egui::pos2(c.x, c.y - h * 0.02),
+                    egui::pos2(c.x, c.y + h * 0.22),
+                ],
+                stroke,
+            );
+        }
+    }
 }
 
 fn metric_card(ui: &mut egui::Ui, title: &str, value: usize, color: egui::Color32) {
