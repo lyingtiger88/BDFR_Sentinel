@@ -186,10 +186,11 @@ fn acquire_single_instance() -> std::io::Result<Option<SingleInstanceGuard>> {
     }
 
     const ERROR_ALREADY_EXISTS: u32 = 183;
-    let name: Vec<u16> = OsStr::new("Local\\BDFR_Sentinel_GUI_91F8715A_71D5_4D49_90A4_7D83F2D7B2D4")
-        .encode_wide()
-        .chain(std::iter::once(0))
-        .collect();
+    let name: Vec<u16> =
+        OsStr::new("Local\\BDFR_Sentinel_GUI_91F8715A_71D5_4D49_90A4_7D83F2D7B2D4")
+            .encode_wide()
+            .chain(std::iter::once(0))
+            .collect();
 
     unsafe {
         let handle = CreateMutexW(ptr::null(), 0, name.as_ptr());
