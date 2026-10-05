@@ -105,6 +105,12 @@ struct ServiceConfig {
     enable_scheduled_scan: bool,
     #[serde(default = "default_scheduled_scan_interval_minutes")]
     scheduled_scan_interval_minutes: u64,
+    #[serde(default)]
+    enable_game_mode: bool,
+    #[serde(default)]
+    ransomware_aggressive: bool,
+    #[serde(default)]
+    ransomware_protected_paths: Vec<PathBuf>,
 }
 
 fn default_definition_update_interval_minutes() -> u64 {
@@ -118,6 +124,44 @@ fn default_scheduled_scan_interval_minutes() -> u64 {
 fn default_true() -> bool {
     true
 }
+
+fn default_ransomware_protected_paths() -> Vec<PathBuf> {
+    let Some(profile) = std::env::var_os("USERPROFILE").map(PathBuf::from) else {
+        return Vec::new();
+    };
+
+    ["Desktop", "Documents", "Pictures"]
+        .into_iter()
+        .map(|name| profile.join(name))
+        .filter(|path| path.exists())
+        .collect()
+}
+
+#[cfg(windows)]
+fn apply_runtime_priority(game_mode: bool) {
+    use std::ffi::c_void;
+
+    #[link(name = "kernel32")]
+    extern "system" {
+        fn GetCurrentProcess() -> *mut c_void;
+        fn SetPriorityClass(process: *mut c_void, priority_class: u32) -> i32;
+    }
+
+    const NORMAL_PRIORITY_CLASS: u32 = 0x0000_0020;
+    const BELOW_NORMAL_PRIORITY_CLASS: u32 = 0x0000_4000;
+    let class = if game_mode {
+        BELOW_NORMAL_PRIORITY_CLASS
+    } else {
+        NORMAL_PRIORITY_CLASS
+    };
+
+    unsafe {
+        let _ = SetPriorityClass(GetCurrentProcess(), class);
+    }
+}
+
+#[cfg(not(windows))]
+fn apply_runtime_priority(_game_mode: bool) {}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct UiProtectionSettings {
@@ -139,6 +183,12 @@ struct UiProtectionSettings {
     enable_scheduled_scan: bool,
     auto_quarantine: bool,
     scheduled_scan_interval_minutes: u64,
+    #[serde(default)]
+    enable_game_mode: bool,
+    #[serde(default)]
+    ransomware_aggressive: bool,
+    #[serde(default)]
+    ransomware_protected_paths: Vec<PathBuf>,
     excluded_paths: Vec<PathBuf>,
     excluded_extensions: Vec<String>,
     excluded_processes: Vec<String>,
@@ -192,6 +242,9 @@ impl ServiceConfig {
             enable_network_protection: true,
             enable_scheduled_scan: false,
             scheduled_scan_interval_minutes: 24 * 60,
+            enable_game_mode: false,
+            ransomware_aggressive: false,
+            ransomware_protected_paths: default_ransomware_protected_paths(),
         }
     }
 }
@@ -226,6 +279,8 @@ struct StatusSnapshot {
     scheduled_scan_active: bool,
     usb_protection_active: bool,
     network_protection_active: bool,
+    game_mode_active: bool,
+    ransomware_aggressive: bool,
     firewall_mode: FirewallMode,
 }
 
@@ -624,7 +679,20 @@ fn run_service() -> Result<()> {
     })?;
 
     ensure_config_exists()?;
-    let config = load_config()?;
+    let mut config = load_config()?;
+
+    apply_runtime_priority(config.enable_game_mode);
+    if config.enable_game_mode {
+        info!("Game Mode active: lowering Sentinel process priority and pausing non-essential background protection");
+        config.enable_process_telemetry = false;
+        config.enable_registry_telemetry = false;
+        config.enable_memory_telemetry = false;
+        config.enable_etw = false;
+        config.enable_definition_updates = false;
+        config.enable_scheduled_scan = false;
+        config.enable_usb_protection = false;
+    }
+
     let scanner = Arc::new(build_scanner(
         config.hdb_path.as_deref(),
         config.hsb_path.as_deref(),
@@ -795,9 +863,14 @@ fn run_service() -> Result<()> {
     };
 
     let ransomware_monitor = if config.enable_ransomware_shield {
-        let paths = config.watch_paths.clone();
+        let paths = if config.ransomware_protected_paths.is_empty() {
+            config.watch_paths.clone()
+        } else {
+            config.ransomware_protected_paths.clone()
+        };
         let excluded = config.excluded_paths.clone();
-        match RansomwareMonitor::start(&paths, excluded, move |path, assessment| {
+        let aggressive = config.ransomware_aggressive;
+        match RansomwareMonitor::start(&paths, excluded, aggressive, move |path, assessment| {
             let action = if assessment.malicious {
                 "block-alert"
             } else {
@@ -808,10 +881,12 @@ fn run_service() -> Result<()> {
                 action,
                 &path,
                 format!(
-                    "changes={}, dirs={}, extensions={}",
+                    "changes={}, dirs={}, extensions={}, risk_score={}, aggressive={}",
                     assessment.recent_changes,
                     assessment.unique_directories,
-                    assessment.unique_extensions
+                    assessment.unique_extensions,
+                    assessment.risk_score,
+                    assessment.aggressive_mode
                 ),
             );
 
@@ -821,6 +896,8 @@ fn run_service() -> Result<()> {
                     changes = assessment.recent_changes,
                     directories = assessment.unique_directories,
                     extensions = assessment.unique_extensions,
+                    risk_score = assessment.risk_score,
+                    aggressive = assessment.aggressive_mode,
                     "ransomware-style mass file modification detected"
                 );
             } else {
@@ -1923,6 +2000,8 @@ fn apply_config_setting(config: &mut ServiceConfig, key: &str, enabled: bool) ->
         "usb_protection" => config.enable_usb_protection = enabled,
         "network_protection" => config.enable_network_protection = enabled,
         "scheduled_scan" => config.enable_scheduled_scan = enabled,
+        "game_mode" => config.enable_game_mode = enabled,
+        "ransomware_aggressive" => config.ransomware_aggressive = enabled,
         "auto_quarantine" => config.auto_quarantine = enabled,
         _ => anyhow::bail!("unknown protection setting: {key}"),
     }
@@ -2041,6 +2120,9 @@ fn config_command(args: Vec<String>) -> Result<()> {
             config.auto_quarantine = settings.auto_quarantine;
             config.scheduled_scan_interval_minutes =
                 settings.scheduled_scan_interval_minutes.max(1);
+            config.enable_game_mode = settings.enable_game_mode;
+            config.ransomware_aggressive = settings.ransomware_aggressive;
+            config.ransomware_protected_paths = settings.ransomware_protected_paths;
             config.excluded_paths = settings.excluded_paths;
             config.excluded_extensions = settings
                 .excluded_extensions
@@ -2196,6 +2278,8 @@ fn write_status_snapshot(
         scheduled_scan_active: config.enable_scheduled_scan,
         usb_protection_active: config.enable_usb_protection,
         network_protection_active,
+        game_mode_active: config.enable_game_mode,
+        ransomware_aggressive: config.ransomware_aggressive,
         firewall_mode: config.firewall_mode,
     };
 
