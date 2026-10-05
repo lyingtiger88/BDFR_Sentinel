@@ -1,0 +1,36 @@
+{
+  "name": "Arctic",
+  "mode": "light",
+  "accent": [
+    0,
+    105,
+    180
+  ],
+  "background": [
+    239,
+    247,
+    252
+  ],
+  "sidebar": [
+    225,
+    239,
+    248
+  ],
+  "panel": [
+    250,
+    253,
+    255
+  ],
+  "panel_hover": [
+    219,
+    237,
+    247
+  ],
+  "text": [
+    24,
+    43,
+    56
+  ],
+  "corner_radius": 12,
+  "compact": false
+}
