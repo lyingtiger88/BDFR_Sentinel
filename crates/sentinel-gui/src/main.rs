@@ -28,7 +28,8 @@ const GOOD: egui::Color32 = egui::Color32::from_rgb(60, 170, 75);
 const WARN: egui::Color32 = egui::Color32::from_rgb(230, 145, 0);
 const BAD: egui::Color32 = egui::Color32::from_rgb(210, 55, 45);
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 enum ThemeMode {
     System,
     Dark,
@@ -43,6 +44,203 @@ impl ThemeMode {
             Self::Light => "Light",
         }
     }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct UiSkin {
+    name: String,
+    mode: ThemeMode,
+    accent: [u8; 3],
+    background: [u8; 3],
+    sidebar: [u8; 3],
+    panel: [u8; 3],
+    panel_hover: [u8; 3],
+    text: [u8; 3],
+    #[serde(default = "default_skin_corner_radius")]
+    corner_radius: u8,
+    #[serde(default)]
+    compact: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct UiPreferences {
+    selected_skin: String,
+}
+
+fn default_skin_corner_radius() -> u8 {
+    10
+}
+
+fn rgb(value: [u8; 3]) -> egui::Color32 {
+    egui::Color32::from_rgb(value[0], value[1], value[2])
+}
+
+fn built_in_skins() -> Vec<UiSkin> {
+    vec![
+        UiSkin {
+            name: "Sentinel Default".to_string(),
+            mode: ThemeMode::Dark,
+            accent: [96, 205, 255],
+            background: [20, 27, 36],
+            sidebar: [16, 23, 32],
+            panel: [29, 36, 46],
+            panel_hover: [39, 51, 65],
+            text: [245, 245, 245],
+            corner_radius: 10,
+            compact: false,
+        },
+        UiSkin {
+            name: "Obsidian".to_string(),
+            mode: ThemeMode::Dark,
+            accent: [55, 150, 255],
+            background: [10, 13, 18],
+            sidebar: [7, 10, 15],
+            panel: [20, 25, 33],
+            panel_hover: [29, 37, 49],
+            text: [238, 243, 250],
+            corner_radius: 12,
+            compact: false,
+        },
+        UiSkin {
+            name: "Arctic".to_string(),
+            mode: ThemeMode::Light,
+            accent: [0, 105, 180],
+            background: [239, 247, 252],
+            sidebar: [225, 239, 248],
+            panel: [250, 253, 255],
+            panel_hover: [219, 237, 247],
+            text: [24, 43, 56],
+            corner_radius: 12,
+            compact: false,
+        },
+        UiSkin {
+            name: "Graphite".to_string(),
+            mode: ThemeMode::Dark,
+            accent: [174, 186, 198],
+            background: [26, 28, 31],
+            sidebar: [20, 22, 25],
+            panel: [37, 40, 44],
+            panel_hover: [50, 54, 59],
+            text: [240, 240, 240],
+            corner_radius: 8,
+            compact: true,
+        },
+        UiSkin {
+            name: "High Contrast".to_string(),
+            mode: ThemeMode::Dark,
+            accent: [0, 220, 255],
+            background: [0, 0, 0],
+            sidebar: [0, 0, 0],
+            panel: [18, 18, 18],
+            panel_hover: [38, 38, 38],
+            text: [255, 255, 255],
+            corner_radius: 4,
+            compact: true,
+        },
+    ]
+}
+
+fn ui_preferences_path() -> PathBuf {
+    let base = std::env::var_os("APPDATA")
+        .map(PathBuf::from)
+        .unwrap_or_else(std::env::temp_dir);
+    base.join("BDFR").join("Sentinel").join("ui-preferences.json")
+}
+
+fn user_skin_dir() -> PathBuf {
+    let base = std::env::var_os("APPDATA")
+        .map(PathBuf::from)
+        .unwrap_or_else(std::env::temp_dir);
+    base.join("BDFR").join("Sentinel").join("Themes")
+}
+
+fn bundled_skin_dir() -> Option<PathBuf> {
+    std::env::current_exe()
+        .ok()
+        .and_then(|exe| exe.parent().map(|parent| parent.join("themes")))
+}
+
+fn load_skin_file(path: &Path) -> Option<UiSkin> {
+    let bytes = fs::read(path).ok()?;
+    let mut skin = serde_json::from_slice::<UiSkin>(&bytes).ok()?;
+    skin.name = skin.name.trim().to_string();
+    if skin.name.is_empty() {
+        return None;
+    }
+    skin.corner_radius = skin.corner_radius.clamp(0, 24);
+    Some(skin)
+}
+
+fn load_available_skins() -> Vec<UiSkin> {
+    let mut skins = built_in_skins();
+
+    let mut roots = Vec::new();
+    if let Some(path) = bundled_skin_dir() {
+        roots.push(path);
+    }
+    roots.push(user_skin_dir());
+
+    for root in roots {
+        let Ok(entries) = fs::read_dir(root) else {
+            continue;
+        };
+
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().and_then(|ext| ext.to_str()) != Some("json") {
+                continue;
+            }
+            let Some(skin) = load_skin_file(&path) else {
+                continue;
+            };
+
+            if let Some(existing) = skins.iter_mut().find(|item| item.name == skin.name) {
+                *existing = skin;
+            } else {
+                skins.push(skin);
+            }
+        }
+    }
+
+    skins
+}
+
+fn load_ui_preferences() -> UiPreferences {
+    fs::read(ui_preferences_path())
+        .ok()
+        .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+        .unwrap_or(UiPreferences {
+            selected_skin: "Sentinel Default".to_string(),
+        })
+}
+
+fn save_ui_preferences(selected_skin: &str) {
+    let path = ui_preferences_path();
+    if let Some(parent) = path.parent() {
+        let _ = fs::create_dir_all(parent);
+    }
+    let preferences = UiPreferences {
+        selected_skin: selected_skin.to_string(),
+    };
+    if let Ok(bytes) = serde_json::to_vec_pretty(&preferences) {
+        let _ = fs::write(path, bytes);
+    }
+}
+
+fn skin_file_name(name: &str) -> String {
+    let sanitized = name
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_') {
+                ch
+            } else {
+                '-'
+            }
+        })
+        .collect::<String>()
+        .trim_matches('-')
+        .to_ascii_lowercase();
+    format!("{}.json", if sanitized.is_empty() { "custom-skin" } else { &sanitized })
 }
 
 #[cfg(windows)]
@@ -239,51 +437,30 @@ fn resolved_theme(ctx: &egui::Context, mode: ThemeMode) -> egui::Theme {
     }
 }
 
-fn configure_style(ctx: &egui::Context, mode: ThemeMode) {
-    let theme = resolved_theme(ctx, mode);
+fn configure_style(ctx: &egui::Context, skin: &UiSkin) {
+    let theme = resolved_theme(ctx, skin.mode);
     ctx.set_theme(theme);
 
-    let dark = theme == egui::Theme::Dark;
     let mut style = (*ctx.style()).clone();
-    style.spacing.item_spacing = egui::vec2(12.0, 12.0);
-    style.spacing.button_padding = egui::vec2(18.0, 11.0);
-    style.spacing.indent = 20.0;
-    style.visuals = if dark {
+    let spacing = if skin.compact { 8.0 } else { 12.0 };
+    let button_x = if skin.compact { 13.0 } else { 18.0 };
+    let button_y = if skin.compact { 8.0 } else { 11.0 };
+    style.spacing.item_spacing = egui::vec2(spacing, spacing);
+    style.spacing.button_padding = egui::vec2(button_x, button_y);
+    style.spacing.indent = if skin.compact { 14.0 } else { 20.0 };
+    style.visuals = if theme == egui::Theme::Dark {
         egui::Visuals::dark()
     } else {
         egui::Visuals::light()
     };
 
-    let panel = if dark {
-        egui::Color32::from_rgb(29, 36, 46)
-    } else {
-        egui::Color32::from_rgb(250, 250, 250)
-    };
-    let panel_hover = if dark {
-        egui::Color32::from_rgb(39, 51, 65)
-    } else {
-        egui::Color32::from_rgb(238, 238, 238)
-    };
-    let background = if dark {
-        egui::Color32::from_rgb(20, 27, 36)
-    } else {
-        egui::Color32::from_rgb(243, 243, 243)
-    };
-    let sidebar = if dark {
-        egui::Color32::from_rgb(16, 23, 32)
-    } else {
-        egui::Color32::from_rgb(248, 248, 248)
-    };
-    let text = if dark {
-        egui::Color32::from_rgb(245, 245, 245)
-    } else {
-        egui::Color32::from_rgb(28, 28, 28)
-    };
-    let accent = if dark {
-        egui::Color32::from_rgb(96, 205, 255)
-    } else {
-        egui::Color32::from_rgb(0, 95, 184)
-    };
+    let panel = rgb(skin.panel);
+    let panel_hover = rgb(skin.panel_hover);
+    let background = rgb(skin.background);
+    let sidebar = rgb(skin.sidebar);
+    let text = rgb(skin.text);
+    let accent = rgb(skin.accent);
+    let radius = egui::CornerRadius::same(skin.corner_radius);
 
     style.visuals.panel_fill = background;
     style.visuals.window_fill = panel;
@@ -292,18 +469,18 @@ fn configure_style(ctx: &egui::Context, mode: ThemeMode) {
     style.visuals.override_text_color = Some(text);
     style.visuals.widgets.noninteractive.bg_fill = panel;
     style.visuals.widgets.noninteractive.fg_stroke.color = text;
-    style.visuals.widgets.noninteractive.corner_radius = egui::CornerRadius::same(8);
+    style.visuals.widgets.noninteractive.corner_radius = radius;
     style.visuals.widgets.inactive.bg_fill = panel;
     style.visuals.widgets.inactive.weak_bg_fill = panel;
     style.visuals.widgets.inactive.fg_stroke.color = text;
-    style.visuals.widgets.inactive.corner_radius = egui::CornerRadius::same(8);
+    style.visuals.widgets.inactive.corner_radius = radius;
     style.visuals.widgets.hovered.bg_fill = panel_hover;
     style.visuals.widgets.hovered.weak_bg_fill = panel_hover;
     style.visuals.widgets.hovered.fg_stroke.color = text;
-    style.visuals.widgets.hovered.corner_radius = egui::CornerRadius::same(8);
+    style.visuals.widgets.hovered.corner_radius = radius;
     style.visuals.widgets.active.bg_fill = panel_hover;
     style.visuals.widgets.active.fg_stroke.color = text;
-    style.visuals.widgets.active.corner_radius = egui::CornerRadius::same(8);
+    style.visuals.widgets.active.corner_radius = radius;
     style.visuals.selection.bg_fill = accent;
     style.visuals.hyperlink_color = accent;
 
@@ -526,7 +703,9 @@ struct SentinelApp {
     sentinel_cpu_usage: f32,
     sentinel_memory_mb: f64,
     sentinel_process_count: usize,
-    theme_mode: ThemeMode,
+    skins: Vec<UiSkin>,
+    selected_skin_index: usize,
+    applied_skin_name: String,
     applied_theme: egui::Theme,
     gauge_order: [GaugeKind; 2],
     dragging_gauge: Option<GaugeKind>,
@@ -548,9 +727,19 @@ struct SentinelApp {
 impl SentinelApp {
     fn new(ctx: &egui::Context) -> Self {
         let quarantine_dir = default_quarantine_dir();
-        let theme_mode = ThemeMode::System;
-        configure_style(ctx, theme_mode);
-        let applied_theme = resolved_theme(ctx, theme_mode);
+        let skins = load_available_skins();
+        let ui_preferences = load_ui_preferences();
+        let selected_skin_index = skins
+            .iter()
+            .position(|skin| skin.name == ui_preferences.selected_skin)
+            .unwrap_or(0);
+        let initial_skin = skins
+            .get(selected_skin_index)
+            .cloned()
+            .unwrap_or_else(|| built_in_skins().remove(0));
+        configure_style(ctx, &initial_skin);
+        let applied_theme = resolved_theme(ctx, initial_skin.mode);
+        let applied_skin_name = initial_skin.name.clone();
         let mut system = System::new_all();
         system.refresh_cpu_usage();
         system.refresh_memory();
@@ -588,7 +777,9 @@ impl SentinelApp {
             sentinel_cpu_usage: 0.0,
             sentinel_memory_mb: 0.0,
             sentinel_process_count: 0,
-            theme_mode,
+            skins,
+            selected_skin_index,
+            applied_skin_name,
             applied_theme,
             gauge_order: [GaugeKind::Cpu, GaugeKind::Memory],
             dragging_gauge: None,
@@ -615,11 +806,60 @@ impl SentinelApp {
     }
 
     fn refresh_theme(&mut self, ctx: &egui::Context) {
-        let resolved = resolved_theme(ctx, self.theme_mode);
-        if resolved != self.applied_theme {
-            configure_style(ctx, self.theme_mode);
+        let Some(skin) = self.skins.get(self.selected_skin_index) else {
+            return;
+        };
+        let resolved = resolved_theme(ctx, skin.mode);
+        if resolved != self.applied_theme || skin.name != self.applied_skin_name {
+            configure_style(ctx, skin);
             self.applied_theme = resolved;
+            self.applied_skin_name = skin.name.clone();
+            save_ui_preferences(&skin.name);
         }
+    }
+
+    fn select_skin_by_name(&mut self, name: &str) {
+        if let Some(index) = self.skins.iter().position(|skin| skin.name == name) {
+            self.selected_skin_index = index;
+        }
+    }
+
+    fn import_skin(&mut self) {
+        let Some(path) = rfd::FileDialog::new()
+            .add_filter("BDFR Sentinel Skin", &["json"])
+            .pick_file()
+        else {
+            return;
+        };
+
+        let Some(skin) = load_skin_file(&path) else {
+            self.status_text = "The selected skin file is not a valid Sentinel skin.".to_string();
+            return;
+        };
+
+        let dir = user_skin_dir();
+        if fs::create_dir_all(&dir).is_err() {
+            self.status_text = "Could not create the user theme directory.".to_string();
+            return;
+        }
+
+        let destination = dir.join(skin_file_name(&skin.name));
+        let Ok(bytes) = serde_json::to_vec_pretty(&skin) else {
+            self.status_text = "Could not serialize the imported skin.".to_string();
+            return;
+        };
+        if let Err(err) = fs::write(&destination, bytes) {
+            self.status_text = format!("Could not save imported skin: {err}");
+            return;
+        }
+
+        if let Some(existing) = self.skins.iter_mut().find(|item| item.name == skin.name) {
+            *existing = skin.clone();
+        } else {
+            self.skins.push(skin.clone());
+        }
+        self.select_skin_by_name(&skin.name);
+        self.status_text = format!("Imported skin: {}", skin.name);
     }
 
     fn refresh_service_state(&mut self) {
@@ -2015,45 +2255,84 @@ impl SentinelApp {
             ui,
             "⚙",
             "Settings",
-            "Configure definition sources and detection behavior.",
+            "Customize Sentinel appearance, protection engines and detection behavior.",
         );
 
-        settings_card(ui, "Appearance", |ui| {
+        settings_card(ui, "Appearance & skins", |ui| {
             ui.label(
-                egui::RichText::new("Choose how BDFR Sentinel should look.")
-                    .color(ui.visuals().weak_text_color()),
-            );
-            ui.add_space(6.0);
-
-            let mut selected = self.theme_mode;
-            egui::ComboBox::from_id_salt("theme_mode")
-                .selected_text(selected.label())
-                .width(180.0)
-                .show_ui(ui, |ui| {
-                    ui.selectable_value(
-                        &mut selected,
-                        ThemeMode::System,
-                        ThemeMode::System.label(),
-                    );
-                    ui.selectable_value(&mut selected, ThemeMode::Dark, ThemeMode::Dark.label());
-                    ui.selectable_value(&mut selected, ThemeMode::Light, ThemeMode::Light.label());
-                });
-
-            if selected != self.theme_mode {
-                self.theme_mode = selected;
-            }
-
-            ui.label(
-                egui::RichText::new(match self.theme_mode {
-                    ThemeMode::System => "Follows the current Windows light/dark appearance.",
-                    ThemeMode::Dark => "Uses the dark Fluent palette.",
-                    ThemeMode::Light => "Uses the light Fluent palette.",
-                })
-                .size(11.0)
+                egui::RichText::new(
+                    "Switch the entire Sentinel presentation layer instantly. Imported JSON skins are stored per user.",
+                )
                 .color(ui.visuals().weak_text_color()),
             );
-        });
+            ui.add_space(8.0);
 
+            let current_name = self
+                .skins
+                .get(self.selected_skin_index)
+                .map(|skin| skin.name.clone())
+                .unwrap_or_else(|| "Sentinel Default".to_string());
+            let mut selected_name = current_name.clone();
+
+            ui.horizontal_wrapped(|ui| {
+                ui.label("Skin:");
+                egui::ComboBox::from_id_salt("skin_picker")
+                    .selected_text(&current_name)
+                    .width(210.0)
+                    .show_ui(ui, |ui| {
+                        for skin in &self.skins {
+                            ui.selectable_value(
+                                &mut selected_name,
+                                skin.name.clone(),
+                                &skin.name,
+                            );
+                        }
+                    });
+
+                if fluent_button(ui, "Import skin…", false).clicked() {
+                    self.import_skin();
+                }
+                if fluent_button(ui, "Reset default", false).clicked() {
+                    selected_name = "Sentinel Default".to_string();
+                }
+            });
+
+            if selected_name != current_name {
+                self.select_skin_by_name(&selected_name);
+            }
+
+            if let Some(skin) = self.skins.get(self.selected_skin_index) {
+                ui.add_space(8.0);
+                ui.horizontal_wrapped(|ui| {
+                    for (label, color) in [
+                        ("Accent", skin.accent),
+                        ("Background", skin.background),
+                        ("Panel", skin.panel),
+                        ("Hover", skin.panel_hover),
+                    ] {
+                        egui::Frame::new()
+                            .fill(rgb(color))
+                            .stroke(egui::Stroke::new(1.0, ui.visuals().widgets.noninteractive.bg_stroke.color))
+                            .corner_radius(6.0)
+                            .inner_margin(egui::Margin::symmetric(8, 5))
+                            .show(ui, |ui| {
+                                ui.label(egui::RichText::new(label).size(11.0));
+                            });
+                    }
+                });
+
+                ui.label(
+                    egui::RichText::new(format!(
+                        "{} palette • {} density • {} px control radius",
+                        skin.mode.label(),
+                        if skin.compact { "Compact" } else { "Comfortable" },
+                        skin.corner_radius
+                    ))
+                    .size(11.0)
+                    .color(ui.visuals().weak_text_color()),
+                );
+            }
+        });
         ui.add_space(14.0);
 
         settings_card(ui, "Protection controls", |ui| {
