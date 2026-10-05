@@ -1,0 +1,36 @@
+{
+  "name": "Sentinel Default",
+  "mode": "dark",
+  "accent": [
+    96,
+    205,
+    255
+  ],
+  "background": [
+    20,
+    27,
+    36
+  ],
+  "sidebar": [
+    16,
+    23,
+    32
+  ],
+  "panel": [
+    29,
+    36,
+    46
+  ],
+  "panel_hover": [
+    39,
+    51,
+    65
+  ],
+  "text": [
+    245,
+    245,
+    245
+  ],
+  "corner_radius": 10,
+  "compact": false
+}
