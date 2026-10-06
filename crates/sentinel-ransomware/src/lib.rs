@@ -110,8 +110,8 @@ impl RansomwareShield {
             .into_iter()
             .max_by_key(|(_, count)| *count)
             .map(|(pid, _)| pid);
-        let suspected_process_image = suspected_process_id
-            .and_then(|pid| process_images.remove(&pid));
+        let suspected_process_image =
+            suspected_process_id.and_then(|pid| process_images.remove(&pid));
 
         let recent_changes = self.events.len();
         let unique_directories = directories.len();
