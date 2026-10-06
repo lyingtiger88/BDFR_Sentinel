@@ -15,12 +15,16 @@ pub struct RansomwareAssessment {
     pub unique_extensions: usize,
     pub risk_score: u8,
     pub aggressive_mode: bool,
+    pub suspected_process_id: Option<u32>,
+    pub suspected_process_image: Option<PathBuf>,
 }
 
 #[derive(Debug)]
 struct ChangeEvent {
     at: Instant,
     path: PathBuf,
+    process_id: Option<u32>,
+    process_image: Option<PathBuf>,
 }
 
 #[derive(Debug)]
@@ -58,10 +62,21 @@ impl RansomwareShield {
     }
 
     pub fn observe_path(&mut self, path: &Path) -> RansomwareAssessment {
+        self.observe_path_with_process(path, None, None)
+    }
+
+    pub fn observe_path_with_process(
+        &mut self,
+        path: &Path,
+        process_id: Option<u32>,
+        process_image: Option<&Path>,
+    ) -> RansomwareAssessment {
         let now = Instant::now();
         self.events.push_back(ChangeEvent {
             at: now,
             path: path.to_path_buf(),
+            process_id,
+            process_image: process_image.map(Path::to_path_buf),
         });
 
         while self
@@ -74,6 +89,8 @@ impl RansomwareShield {
 
         let mut directories = HashSet::new();
         let mut extensions = HashSet::new();
+        let mut process_counts: HashMap<u32, usize> = HashMap::new();
+        let mut process_images: HashMap<u32, PathBuf> = HashMap::new();
         for event in &self.events {
             if let Some(parent) = event.path.parent() {
                 directories.insert(parent.to_path_buf());
@@ -81,7 +98,20 @@ impl RansomwareShield {
             if let Some(ext) = event.path.extension().and_then(|ext| ext.to_str()) {
                 extensions.insert(ext.to_ascii_lowercase());
             }
+            if let Some(pid) = event.process_id {
+                *process_counts.entry(pid).or_insert(0) += 1;
+                if let Some(image) = &event.process_image {
+                    process_images.insert(pid, image.clone());
+                }
+            }
         }
+
+        let suspected_process_id = process_counts
+            .into_iter()
+            .max_by_key(|(_, count)| *count)
+            .map(|(pid, _)| pid);
+        let suspected_process_image = suspected_process_id
+            .and_then(|pid| process_images.remove(&pid));
 
         let recent_changes = self.events.len();
         let unique_directories = directories.len();
@@ -108,6 +138,8 @@ impl RansomwareShield {
             unique_extensions,
             risk_score,
             aggressive_mode: self.aggressive_mode,
+            suspected_process_id,
+            suspected_process_image,
         }
     }
 
@@ -211,6 +243,35 @@ mod tests {
         let final_assessment = final_assessment.unwrap();
         assert!(final_assessment.malicious);
         assert!(final_assessment.risk_score >= 90);
+    }
+
+    #[test]
+    fn attributes_burst_to_dominant_process() {
+        let mut shield = RansomwareShield {
+            suspicious_change_threshold: 2,
+            malicious_change_threshold: 4,
+            ..RansomwareShield::default()
+        };
+
+        let image = Path::new(r"C:\Temp\encryptor.exe");
+        let mut final_assessment = shield.observe_path_with_process(
+            Path::new(r"C:\Data\A\one.locked"),
+            Some(4242),
+            Some(image),
+        );
+        for i in 0..4 {
+            final_assessment = shield.observe_path_with_process(
+                &PathBuf::from(format!(r"C:\Data\{}\file{}.locked", i, i)),
+                Some(4242),
+                Some(image),
+            );
+        }
+
+        assert_eq!(final_assessment.suspected_process_id, Some(4242));
+        assert_eq!(
+            final_assessment.suspected_process_image.as_deref(),
+            Some(image)
+        );
     }
 
     #[test]
