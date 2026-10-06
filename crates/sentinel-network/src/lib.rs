@@ -121,8 +121,7 @@ pub fn query_live_connections() -> Result<Vec<LiveConnection>, std::io::Error> {
         .output()?;
 
     if !output.status.success() {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::Other,
+        return Err(std::io::Error::other(
             "netstat failed while enumerating live connections",
         ));
     }
