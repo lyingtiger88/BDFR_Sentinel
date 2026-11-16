@@ -1,27 +1,45 @@
 package com.bdfr.sentinel
 
 import android.app.Activity
+import android.content.Context
+import android.content.res.Configuration
 import android.net.Uri
 import android.os.Bundle
 import android.view.Gravity
+import android.view.View
 import android.view.ViewGroup
+import android.widget.ArrayAdapter
 import android.widget.Button
 import android.widget.LinearLayout
+import android.widget.Spinner
 import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
 import java.io.ByteArrayOutputStream
+import java.util.Locale
 
 private const val MAX_SCAN_BYTES = 32 * 1024 * 1024
 
+private data class AppLanguage(val code: String, val label: String)
+
 class MainActivity : Activity() {
     private lateinit var status: TextView
+    private lateinit var scanButton: Button
+    private lateinit var title: TextView
+    private var languageCode = "en"
     private val nativeScanner by lazy { NativeScanner() }
+
+    private val languages = listOf(
+        AppLanguage("en", "English"), AppLanguage("fa", "فارسی"),
+        AppLanguage("bal", "Balochi"), AppLanguage("ckb", "کوردی (سۆرانی)"),
+        AppLanguage("ar", "العربية"), AppLanguage("de", "Deutsch"),
+        AppLanguage("fr", "Français"), AppLanguage("es", "Español")
+    )
 
     private val openDocument = registerForActivityResult(
         ActivityResultContracts.OpenDocument()
     ) { uri ->
         if (uri == null) {
-            status.text = "No file selected"
+            status.text = tr("no_file")
             return@registerForActivityResult
         }
         scanSelectedDocument(uri)
@@ -29,48 +47,104 @@ class MainActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        languageCode = getSharedPreferences("soban-ui", Context.MODE_PRIVATE)
+            .getString("language", "en") ?: "en"
+
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_HORIZONTAL
-            setPadding(32, 48, 32, 32)
+            setPadding(32, 40, 32, 32)
             layoutParams = ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT
             )
         }
-        val title = TextView(this).apply {
-            text = "soban"
-            textSize = 28f
+
+        title = TextView(this).apply {
+            text = "Soban"
+            textSize = 30f
             gravity = Gravity.CENTER
         }
-        status = TextView(this).apply {
-            text = if (NativeScanner.isAvailable) {
-                "Ready for user-selected file scans.\nCoverage is limited to files Android grants access to."
-            } else {
-                "Native scan engine is not packaged yet.\nProtection is not active."
+        val languagePicker = Spinner(this)
+        languagePicker.adapter = ArrayAdapter(
+            this, android.R.layout.simple_spinner_dropdown_item,
+            languages.map { it.label }
+        )
+        languagePicker.setSelection(languages.indexOfFirst { it.code == languageCode }.coerceAtLeast(0))
+        languagePicker.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
+            override fun onNothingSelected(parent: android.widget.AdapterView<*>?) = Unit
+            override fun onItemSelected(parent: android.widget.AdapterView<*>?, view: View?, position: Int, id: Long) {
+                val selected = languages[position].code
+                if (selected != languageCode) {
+                    languageCode = selected
+                    getSharedPreferences("soban-ui", Context.MODE_PRIVATE).edit()
+                        .putString("language", languageCode).apply()
+                    applyLocaleDirection()
+                    updateLabels()
+                }
             }
-            textSize = 16f
-            gravity = Gravity.CENTER
-            setPadding(0, 32, 0, 32)
         }
-        val scan = Button(this).apply {
-            text = "Choose a file to scan"
+
+        status = TextView(this).apply {
+            textSize = 17f
+            gravity = Gravity.CENTER
+            setPadding(0, 28, 0, 28)
+        }
+        scanButton = Button(this).apply {
+            textSize = 16f
+            setPadding(18, 12, 18, 12)
             isEnabled = NativeScanner.isAvailable
             setOnClickListener { openDocument.launch(arrayOf("*/*")) }
         }
+
         root.addView(title)
+        root.addView(languagePicker)
         root.addView(status)
-        root.addView(scan)
+        root.addView(scanButton)
         setContentView(root)
+        applyLocaleDirection()
+        updateLabels()
+    }
+
+    private fun applyLocaleDirection() {
+        val rtl = languageCode in setOf("fa", "ckb", "ar")
+        window.decorView.layoutDirection = if (rtl) View.LAYOUT_DIRECTION_RTL else View.LAYOUT_DIRECTION_LTR
+        val localeTag = when (languageCode) {
+            "bal" -> "bal"
+            "ckb" -> "ckb"
+            else -> languageCode
+        }
+        @Suppress("DEPRECATION")
+        resources.configuration.setLocale(Locale.forLanguageTag(localeTag))
+    }
+
+    private fun tr(key: String): String {
+        val values = mapOf(
+            "en" to mapOf("ready" to "Ready to scan files selected by you. Android limits access to files you grant.", "unavailable" to "Native scan engine is not installed. Protection is not active.", "choose" to "Choose a file to scan", "no_file" to "No file selected", "reading" to "Reading selected file…"),
+            "fa" to mapOf("ready" to "آماده اسکن فایل‌هایی هستیم که شما انتخاب می‌کنید. دسترسی اندروید محدود به فایل‌های مجاز شماست.", "unavailable" to "موتور اسکن نصب نشده است؛ حفاظت فعال نیست.", "choose" to "انتخاب فایل برای اسکن", "no_file" to "فایلی انتخاب نشد", "reading" to "در حال خواندن فایل…"),
+            "bal" to mapOf("ready" to "شما چه فایلے چُنّیت، آںءَ اسکین کنگءَ تیار اِنت. اندروئید فقط اجازت داتگیں فایلانءَ دسترس دنت.", "unavailable" to "اسکینر انجن نصب نہ اِنت؛ حفاظت فعال نہ اِنت.", "choose" to "اسکینءَ فایل چُنّیت", "no_file" to "هیچ فایلے چُنّگ نہ بوت", "reading" to "فایل خوانگءَ اِنت…"),
+            "ckb" to mapOf("ready" to "ئامادەین بۆ پشکنینی ئەو فایلانەی کە خۆت هەڵیان دەبژێریت. دەستگەیشتن تەنها بە فایلە ڕێگەپێدراوەکانە.", "unavailable" to "مۆتۆری پشکنین دانەمەزراوە؛ پاراستن چالاک نییە.", "choose" to "فایلێک بۆ پشکنین هەڵبژێرە", "no_file" to "هیچ فایلێک هەڵنەبژێردرا", "reading" to "فایلەکە دەخوێندرێتەوە…"),
+            "ar" to mapOf("ready" to "جاهز لفحص الملفات التي تختارها. يقتصر وصول أندرويد على الملفات التي تسمح بها.", "unavailable" to "محرك الفحص غير مثبت؛ الحماية غير نشطة.", "choose" to "اختر ملفاً للفحص", "no_file" to "لم يتم اختيار ملف", "reading" to "جارٍ قراءة الملف…"),
+            "de" to mapOf("ready" to "Bereit zum Scannen ausgewählter Dateien. Android beschränkt den Zugriff auf freigegebene Dateien.", "unavailable" to "Scan-Engine nicht installiert. Schutz ist nicht aktiv.", "choose" to "Datei zum Scannen auswählen", "no_file" to "Keine Datei ausgewählt", "reading" to "Datei wird gelesen…"),
+            "fr" to mapOf("ready" to "Prêt à analyser les fichiers que vous sélectionnez. Android limite l’accès aux fichiers autorisés.", "unavailable" to "Moteur d’analyse non installé. Protection inactive.", "choose" to "Choisir un fichier à analyser", "no_file" to "Aucun fichier sélectionné", "reading" to "Lecture du fichier…"),
+            "es" to mapOf("ready" to "Listo para analizar los archivos que selecciones. Android limita el acceso a los archivos autorizados.", "unavailable" to "El motor de análisis no está instalado. Protección inactiva.", "choose" to "Elegir archivo para analizar", "no_file" to "No se seleccionó ningún archivo", "reading" to "Leyendo archivo…")
+        )
+        return values[languageCode]?.get(key) ?: values["en"]!!.getValue(key)
+    }
+
+    private fun updateLabels() {
+        title.text = "Soban"
+        status.text = if (NativeScanner.isAvailable) tr("ready") else tr("unavailable")
+        scanButton.text = tr("choose")
+        scanButton.isEnabled = NativeScanner.isAvailable
     }
 
     private fun scanSelectedDocument(uri: Uri) {
         if (!NativeScanner.isAvailable) {
-            status.text = "Native scan engine is not installed. No clean verdict can be produced."
+            status.text = tr("unavailable")
             return
         }
-
-        status.text = "Reading selected file…"
+        status.text = tr("reading")
         Thread {
             val result = try {
                 val bytes = readBounded(uri)
@@ -79,9 +153,7 @@ class MainActivity : Activity() {
             } catch (error: Exception) {
                 "Scan unavailable: " + (error.message ?: "File could not be read")
             }
-            runOnUiThread {
-                status.text = result
-            }
+            runOnUiThread { status.text = result }
         }.start()
     }
 
