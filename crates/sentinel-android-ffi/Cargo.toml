@@ -3,7 +3,7 @@ name = "sentinel-android-ffi"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "JNI bridge from Android SAF streams to the shared BDFR Sentinel scanner"
+description = "JNI bridge from Android SAF streams to the shared Soban scanner"
 
 [lib]
 name = "sentinel_android_ffi"
