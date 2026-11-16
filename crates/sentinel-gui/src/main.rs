@@ -2822,11 +2822,15 @@ impl SentinelApp {
                         {
                             self.protection_preferences.firewall_application_rules.push(
                                 ApplicationRule {
+                                    name: path.file_stem().and_then(|name| name.to_str()).unwrap_or("Application").to_string(),
                                     application: path,
                                     direction: FirewallDirection::Both,
                                     action: FirewallAction::Block,
                                     protocol: FirewallProtocol::Any,
                                     remote_ports: Vec::new(),
+                                    local_ports: Vec::new(),
+                                    remote_ports_text: Some(String::new()),
+                                    local_ports_text: Some(String::new()),
                                     enabled: true,
                                 },
                             );
