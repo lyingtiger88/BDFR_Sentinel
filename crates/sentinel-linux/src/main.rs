@@ -88,7 +88,7 @@ fn scan_path(scanner: &FileScanner, path: &Path) -> Result<(usize, usize, usize)
     let mut scanned = 0usize;
     let mut suspicious = 0usize;
     let mut malicious = 0usize;
-    for entry in WalkDir::new(path).follow_links(false).into_iter().filter_map(Result::ok) {
+    for entry in WalkDir::new(path).follow_links(false).into_iter().filter_map(|entry| entry.ok()) {
         if !entry.file_type().is_file() {
             continue;
         }
@@ -109,8 +109,13 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
     match cli.command {
         Command::Capabilities => {
-            let capabilities = sentinel_linux::host::discover_capabilities();
-            println!("{}", serde_json::to_string_pretty(&capabilities)?);
+            #[cfg(target_os = "linux")]
+            {
+                let capabilities = sentinel_linux::host::discover_capabilities();
+                println!("{}", serde_json::to_string_pretty(&capabilities)?);
+            }
+            #[cfg(not(target_os = "linux"))]
+            bail!("capability discovery is available only on Linux");
         }
         Command::Scan { path } => {
             let scanner = build_scanner(&cli.definitions_dir, &cli.rules_dir)?;
