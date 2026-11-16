@@ -1,8 +1,8 @@
-# Soban
+# soban
 
-**Soban (سوبان)** is a cross-platform endpoint-security product developed around a shared Rust detection and policy core with native Windows, Debian GNU/Linux and Android integrations.
+**soban (سوبان)** is a cross-platform endpoint-security product developed around a shared Rust detection and policy core with native Windows, Debian GNU/Linux and Android integrations.
 
-The product name is Soban. Internal Rust crate names and the GitHub repository name remain unchanged for now to avoid breaking imports, package references, automation and repository history.
+The product name is soban. Internal Rust crate names and the GitHub repository name remain unchanged for now to avoid breaking imports, package references, automation and repository history.
 
 ## Supported targets
 - **Windows:** reference implementation and current feature baseline.
