@@ -3,7 +3,7 @@ name = "sentinel-linux"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "Linux-native platform adapters and scanner CLI for Soban"
+description = "Linux-native platform adapters and scanner CLI for soban"
 
 [lib]
 name = "sentinel_linux"
