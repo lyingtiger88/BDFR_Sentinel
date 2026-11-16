@@ -1,0 +1,17 @@
+[package]
+name = "sentinel-android-ffi"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "JNI bridge from Android SAF streams to the shared BDFR Sentinel scanner"
+
+[lib]
+name = "sentinel_android_ffi"
+crate-type = ["cdylib"]
+
+[dependencies]
+jni = "0.21"
+serde_json.workspace = true
+sentinel-core = { path = "../sentinel-core" }
+sentinel-definitions = { path = "../sentinel-definitions" }
+sentinel-yara = { path = "../sentinel-yara" }
