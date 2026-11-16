@@ -61,3 +61,12 @@ Never claim parity based only on matching screens or compiling shared code.
 - Do not delete or replace working Windows code while porting.
 - Keep commits scoped and descriptive; do not mark unvalidated code as release-ready.
 - No build/test/package/CI execution until explicitly requested by the user.
+
+
+## Branding, themes and localization rule
+
+- The public product name is **Soban** in English and **سوبان** in Persian.
+- Themes must be visual systems, not accent-color switches: each may define surface palette, wallpaper/artwork, icon family, illustration treatment, typography scale and control sizing.
+- Localization is shared by product meaning but rendered through native UI frameworks. RTL languages must use appropriate layout direction and text shaping.
+- Initial language catalog: English (en), Persian (fa), Balochi (bal), Kurdish Sorani (ckb), Arabic (ar), German (de), French (fr) and Spanish (es).
+- Balochi and Kurdish translations must be reviewed by native speakers before being marked production-complete.
