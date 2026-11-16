@@ -74,11 +74,11 @@ fn scan_json(bytes: &[u8], label: &str, app_data_dir: &Path) -> Result<String> {
 /// a bounded byte array; Rust never resolves a content:// URI as a filesystem path.
 #[no_mangle]
 pub extern "system" fn Java_com_bdfr_sentinel_NativeScanner_scanBytes(
-    mut env: JNIEnv,
-    _this: JObject,
-    data: JByteArray,
-    label: JString,
-    app_data_dir: JString,
+    mut env: JNIEnv<'_>,
+    _this: JObject<'_>,
+    data: JByteArray<'_>,
+    label: JString<'_>,
+    app_data_dir: JString<'_>,
 ) -> jstring {
     let response = (|| -> Result<String> {
         let bytes = env.convert_byte_array(data).context("cannot read scan buffer")?;
