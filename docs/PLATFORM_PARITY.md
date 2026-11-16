@@ -86,7 +86,7 @@ This matrix is the source of truth for feature requests that must be carried acr
 | Ransomware protection | Reference implementation | Planned | Limited/planned |
 | Signed definition updates | Shared updater reference | Integration pending | Integration pending |
 | Service/app lifecycle | Windows service | systemd service pending | Android lifecycle shell present; full background work pending |
-| UI and history | Windows reference UI | Desktop UI pending | Initial SAF screen only; full dashboard/history pending |
+| UI and history | Soban desktop UI: theme/language selector and themed artwork updated; full localization pending | CLI only; locale catalog present, desktop UI pending | SAF scan screen with theme/language selectors and localized scan entry; full dashboard/history pending |
 | License/entitlement | Reference behavior | Integration pending | Integration pending |
 
 ### Mandatory propagation checklist
