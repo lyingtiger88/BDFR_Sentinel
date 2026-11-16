@@ -1,0 +1,12 @@
+{
+  "language": "Application language",
+  "direction": "ltr",
+  "dashboard": "Security dashboard",
+  "scan": "Scan",
+  "quarantine": "Quarantine",
+  "history": "History",
+  "settings": "Settings",
+  "about": "About",
+  "appearance": "Appearance and themes",
+  "choose_file": "Choose a file to scan"
+}
