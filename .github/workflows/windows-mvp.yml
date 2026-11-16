@@ -201,30 +201,54 @@ jobs:
             throw "Installer output was not generated"
           }
 
-      - name: Create BDFR self-signed test certificate and sign Windows outputs
+      - name: Prepare persistent BDFR signing certificate
         shell: pwsh
+        timeout-minutes: 1
+        env:
+          PFX_BASE64: ${{ secrets.BDFR_CODESIGN_PFX_BASE64 }}
+          PFX_PASSWORD: ${{ secrets.BDFR_CODESIGN_PFX_PASSWORD }}
+          EXPECTED_THUMBPRINT: ${{ secrets.BDFR_CODESIGN_THUMBPRINT }}
         run: |
           $ErrorActionPreference = "Stop"
-          $cert = New-SelfSignedCertificate -Type CodeSigningCert -Subject "CN=BDFR Test Publisher" -CertStoreLocation "Cert:\CurrentUser\My" -KeyAlgorithm RSA -KeyLength 3072 -HashAlgorithm SHA256 -NotAfter (Get-Date).AddYears(3)
-          New-Item -ItemType Directory -Force -Path dist/signing | Out-Null
-          Export-Certificate -Cert $cert -FilePath dist/signing/BDFR-Test-Publisher.cer | Out-Null
-          Import-Certificate -FilePath dist/signing/BDFR-Test-Publisher.cer -CertStoreLocation "Cert:\CurrentUser\Root" | Out-Null
-          Import-Certificate -FilePath dist/signing/BDFR-Test-Publisher.cer -CertStoreLocation "Cert:\CurrentUser\TrustedPublisher" | Out-Null
+          foreach ($name in @("PFX_BASE64", "PFX_PASSWORD", "EXPECTED_THUMBPRINT")) {
+            if ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($name))) { throw "Required signing secret $name is missing." }
+          }
+          $pfxBytes = [Convert]::FromBase64String($env:PFX_BASE64)
+          $flags = [System.Security.Cryptography.X509Certificates.X509KeyStorageFlags]::EphemeralKeySet
+          $cert = [System.Security.Cryptography.X509Certificates.X509Certificate2]::new($pfxBytes, $env:PFX_PASSWORD, $flags)
+          if (-not $cert.HasPrivateKey) { throw "PFX does not contain a private key." }
+          if ($cert.Thumbprint -ne $env:EXPECTED_THUMBPRINT) { throw "PFX thumbprint mismatch." }
+          New-Item -ItemType Directory -Force dist/signing | Out-Null
+          [IO.File]::WriteAllBytes("dist/signing/BDFR-CodeSigning.cer", $cert.Export([System.Security.Cryptography.X509Certificates.X509ContentType]::Cert))
+          $pfxPath = Join-Path $env:RUNNER_TEMP "BDFR-CodeSigning.pfx"
+          [IO.File]::WriteAllBytes($pfxPath, $pfxBytes)
+          "BDFR_CODESIGN_THUMBPRINT=$($cert.Thumbprint)" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          "BDFR_PFX_PATH=$pfxPath" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+      - name: Sign and verify Sentinel Windows binaries and installer
+        shell: pwsh
+        timeout-minutes: 5
+        env:
+          PFX_PASSWORD: ${{ secrets.BDFR_CODESIGN_PFX_PASSWORD }}
+        run: |
+          $ErrorActionPreference = "Stop"
           $sdk = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin" -Filter signtool.exe -Recurse | Where-Object { $_.FullName -match "\\x64\\signtool.exe$" } | Sort-Object FullName -Descending | Select-Object -First 1
-          if (-not $sdk) { throw "Windows SDK SignTool not found" }
+          if (-not $sdk) { throw "Windows SDK SignTool not found." }
           $files = @(
             Get-ChildItem target\release -Filter *.exe -File
             Get-Item installer\output\BDFR-Sentinel-Setup-x64.exe
           )
-          if ($files.Count -lt 4) { throw "Expected Sentinel CLI, GUI, service and installer binaries" }
+          if ($files.Count -lt 4) { throw "Expected Sentinel CLI, GUI, service and installer binaries." }
           foreach ($file in $files) {
-            & $sdk.FullName sign /fd SHA256 /sha1 $cert.Thumbprint $file.FullName
+            & $sdk.FullName sign /f "$env:BDFR_PFX_PATH" /p "$env:PFX_PASSWORD" /fd SHA256 $file.FullName
             if ($LASTEXITCODE -ne 0) { throw "Signing failed: $($file.Name)" }
-            & $sdk.FullName verify /pa /v $file.FullName
-            if ($LASTEXITCODE -ne 0) { throw "Signature verification failed: $($file.Name)" }
+            $signature = Get-AuthenticodeSignature -FilePath $file.FullName
+            if (-not $signature.SignerCertificate -or $signature.SignerCertificate.Thumbprint -ne $env:BDFR_CODESIGN_THUMBPRINT) { throw "Wrong BDFR signer on $($file.Name)." }
+            $expectedUntrustedRoot = $signature.Status -eq "UnknownError" -and $signature.StatusMessage -match "root certificate which is not trusted"
+            if ($signature.Status -ne "Valid" -and -not $expectedUntrustedRoot) { throw "Authenticode validation failed for $($file.Name): $($signature.Status) $($signature.StatusMessage)" }
           }
           $files | ForEach-Object { Get-FileHash $_.FullName -Algorithm SHA256 } | ForEach-Object { "$($_.Hash) *$($_.Path)" } | Set-Content dist/signing/SHA256SUMS.txt
-          "BDFR self-signed test identity: $($cert.Thumbprint)" | Set-Content dist/signing/README.txt
+          Remove-Item $env:BDFR_PFX_PATH -Force
+          Write-Host "Signed Sentinel CLI, GUI, service and installer with persistent BDFR identity."
       - name: Standalone installer smoke test
         shell: pwsh
         run: |
