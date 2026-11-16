@@ -106,3 +106,16 @@ Do not run cargo build, cargo test, Gradle build, APK packaging, Debian packagin
 - Current translation coverage is an initial UI slice (navigation, appearance/language labels and Android scan entry screen), not yet every dialog, alert, report and settings field.
 - Balochi and Kurdish Sorani strings are first drafts and require native-speaker review before production release. Kurdish is Sorani (ckb); Balochi is represented by a generic Latin/Arabic script draft and needs dialect/script selection review.
 - Debian currently has a CLI rather than a completed desktop interface; the locale packs are present but CLI-wide localization is not yet wired.
+
+
+## Advanced Windows firewall rule editor
+
+The Soban Windows UI now exposes editable per-application WFP rules:
+- Enable/disable, rename, change executable, duplicate and remove a rule.
+- Edit action (Allow/Block), direction (Inbound/Outbound/Both), protocol (Any/TCP/UDP), local destination ports and remote peer ports.
+- Port lists accept comma-separated values from 1 to 65535. Empty means any port; a maximum of 32 generated local/remote port combinations is enforced.
+- Live TCP/UDP sockets remain visible; where the owning PID resolves to a local executable, the user can create a Block rule directly from that connection.
+- Changes are staged in the UI and only sent to the privileged protection service when the user applies protection settings. Invalid enabled rules are rejected before submission.
+- Legacy serialized rules remain readable through serde defaults for the new metadata and local-port fields.
+
+The current live connection list is an endpoint snapshot, not a packet-capture stream. Dynamic connection termination, remote-IP block actions, rule scheduling, profile import/export and a full rule-priority editor remain future work.
