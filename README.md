@@ -1,17 +1,24 @@
 # BDFR Sentinel
 
-BDFR Sentinel is a modular Windows endpoint security platform written primarily in Rust.
+BDFR Sentinel is a cross-platform endpoint-security product developed around a shared Rust detection and policy core with native Windows, Debian GNU/Linux and Android integrations.
 
-## Goals
+## Supported development targets
 
-- Real-time file monitoring
-- YARA-based detection
-- Secure quarantine
-- Behavioral analysis
-- PE/static analysis
-- Signed update pipeline
-- Windows service integration
-- Future Minifilter, ETW and AMSI integrations
+- **Windows:** reference implementation and current feature baseline.
+- **Debian GNU/Linux:** native service, filesystem, process and network integrations.
+- **Android:** Kotlin application with a shared Rust engine through JNI and Android-scoped file access.
+
+The three targets are developed in parallel. Every new feature or change is evaluated against all three platforms. Shared behavior and security policy should remain consistent; platform-specific integrations must respect each operating system's permissions and security model.
+
+## Core capabilities
+
+- On-demand and real-time file scanning, subject to platform scope.
+- Hash and YARA-based detection.
+- Secure quarantine and recovery.
+- Behavioral and ransomware signals.
+- Network protection through native platform backends.
+- Signed definition updates and rollback protection.
+- Platform-specific service/app lifecycle and diagnostics.
 
 ## Workspace
 
@@ -22,21 +29,28 @@ crates/
   sentinel-quarantine/
   sentinel-updater/
   sentinel-yara/
-  sentinel-pe/
+  sentinel-definitions/
+  sentinel-network/
+  sentinel-linux/
+  sentinel-android-ffi/
+platforms/
+  debian/
+  android/
 docs/
+  PLATFORM_PARITY.md
+  THREE_PLATFORM_DEVELOPMENT.md
 ```
 
-## Status
+## Development policy
 
-Early bootstrap / architecture phase.
+See [Three-Platform Development Contract](docs/THREE_PLATFORM_DEVELOPMENT.md) and [Platform Parity](docs/PLATFORM_PARITY.md).
 
-## Build
+A feature is not considered complete merely because it exists on one operating system. Platform limitations must be explicit, and UI status must never imply protection that is not actually active.
 
-```powershell
-cargo build --workspace
-cargo test --workspace
-```
+## Project status
 
-## Security
+Experimental development. Not suitable for production endpoint protection until security review, builds, tests and runtime validation are completed.
 
-This project is experimental and not yet suitable for production endpoint protection.
+## Build and validation
+
+Builds, tests, packaging and CI workflows are run only when explicitly authorized by the project owner.
