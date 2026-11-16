@@ -3005,7 +3005,8 @@ impl SentinelApp {
             }
             if let Some(index) = duplicate_rule {
                 if let Some(mut rule) = self.protection_preferences.firewall_application_rules.get(index).cloned() {
-                    rule.name = format!("{} (copy)", if rule.name.trim().is_empty() { "Application rule" } else { &rule.name });
+                    let base_name = if rule.name.trim().is_empty() { "Application rule".to_string() } else { rule.name.clone() };
+                    rule.name = format!("{base_name} (copy)");
                     self.protection_preferences.firewall_application_rules.push(rule);
                 }
             }
