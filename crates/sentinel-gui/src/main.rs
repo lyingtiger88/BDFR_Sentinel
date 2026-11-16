@@ -2799,7 +2799,9 @@ impl SentinelApp {
                                     action: FirewallAction::Allow,
                                     protocol: FirewallProtocol::Any,
                                     remote_ports: Vec::new(),
+                                    local_ports: Vec::new(),
                                     remote_ports_text: Some(String::new()),
+                                    local_ports_text: Some(String::new()),
                                     enabled: true,
                                 },
                             );
@@ -2944,6 +2946,20 @@ impl SentinelApp {
                         if let Some((invalid_index, error)) = &invalid_port_rule {
                             if *invalid_index == index { ui.label(egui::RichText::new(error).color(BAD).size(11.0)); }
                         }
+                        ui.horizontal(|ui| {
+                            ui.label("Local ports:");
+                            let local_text = rule.local_ports_text.get_or_insert_with(|| {
+                                rule.local_ports.iter().map(u16::to_string).collect::<Vec<_>>().join(", ")
+                            });
+                            let response = ui.add(egui::TextEdit::singleline(local_text).desired_width(220.0)
+                                .hint_text("Any local port, or e.g. 443, 8443"));
+                            if response.changed() {
+                                match parse_firewall_ports(local_text) {
+                                    Ok(ports) => rule.local_ports = ports,
+                                    Err(error) => invalid_port_rule = Some((index, format!("Local ports: {error}"))),
+                                }
+                            }
+                        });
                         ui.label(egui::RichText::new(rule.application.display().to_string())
                             .size(10.0).color(ui.visuals().weak_text_color()));
                     });
@@ -2968,7 +2984,7 @@ impl SentinelApp {
             if let Some((index, error)) = invalid_port_rule {
                 ui.label(egui::RichText::new(format!("Rule {} not applied: {error}", index + 1)).color(BAD));
             }
-            ui.label(egui::RichText::new("Remote ports accept comma-separated destination ports. Leave empty to match every remote port. Invalid edits do not replace the last valid rule.")
+            ui.label(egui::RichText::new("Local and remote ports accept comma-separated values (1–65535). Empty means any port. Invalid edits do not replace the last valid rule.")
                 .size(11.0).color(ui.visuals().weak_text_color()));
             ui.add_space(10.0);
             ui.separator();
