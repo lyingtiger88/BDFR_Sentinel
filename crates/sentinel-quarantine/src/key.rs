@@ -35,14 +35,17 @@ pub fn load_or_create_key(root: &Path) -> Result<[u8; 32], QuarantineError> {
     use aes_gcm::aead::OsRng;
     use aes_gcm::{Aes256Gcm, KeyInit};
     use std::io::{Read, Write};
-    use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+    use std::os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt};
 
     const KEY_FILE: &str = ".sentinel-key";
     let path = root.join(KEY_FILE);
 
     let read_existing = |path: &Path| -> Result<[u8; 32], QuarantineError> {
         let metadata = fs::symlink_metadata(path)?;
-        if !metadata.file_type().is_file() || metadata.permissions().mode() & 0o077 != 0 {
+        if !metadata.file_type().is_file()
+            || metadata.permissions().mode() & 0o077 != 0
+            || metadata.uid() != unsafe { libc::geteuid() }
+        {
             return Err(QuarantineError::KeyProtection(
                 "quarantine key must be a regular file accessible only by its owner".to_string(),
             ));
