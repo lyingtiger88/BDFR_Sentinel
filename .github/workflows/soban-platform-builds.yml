@@ -1,0 +1,97 @@
+name: Soban platform builds
+
+on:
+  push:
+    branches:
+      - "feature/debian-android-parity"
+    paths-ignore:
+      - "docs/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: soban-platform-builds-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows:
+    name: Windows x64 release
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build Windows applications and service
+        run: cargo build --release -p bdfr-sentinel -p bdfr-sentinel-gui -p bdfr-sentinel-service
+      - name: Package Windows binaries
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist/windows | Out-Null
+          Copy-Item target/release/bdfr-sentinel.exe dist/windows/
+          Copy-Item target/release/bdfr-sentinel-gui.exe dist/windows/
+          Copy-Item target/release/bdfr-sentinel-service.exe dist/windows/
+          Compress-Archive -Path dist/windows/* -DestinationPath Soban-Windows-x64.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Soban-Windows-x64
+          path: Soban-Windows-x64.zip
+          if-no-files-found: error
+
+  android:
+    name: Android APK with native Rust scanner
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: android-actions/setup-android@v3
+      - name: Install Android NDK
+        run: sdkmanager "ndk;27.2.12479018"
+      - name: Configure Android NDK
+        shell: bash
+        run: |
+          echo "ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk/27.2.12479018" >> "$GITHUB_ENV"
+          echo "$ANDROID_SDK_ROOT/ndk/27.2.12479018/toolchains/llvm/prebuilt/linux-x86_64/bin" >> "$GITHUB_PATH"
+      - name: Install cargo-ndk
+        run: cargo install cargo-ndk --locked
+      - name: Build native Rust scanner for Android ABIs
+        run: cargo ndk -t arm64-v8a -t armeabi-v7a -t x86_64 -o platforms/android/app/src/main/jniLibs build --release -p sentinel-android-ffi
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.9"
+      - name: Build Android debug APK
+        working-directory: platforms/android
+        run: gradle --no-daemon :app:assembleDebug
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Soban-Android-debug
+          path: platforms/android/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+
+  debian:
+    name: Debian x64 desktop and CLI
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install native desktop dependencies
+        run: sudo apt-get update && sudo apt-get install -y pkg-config libx11-dev libxkbcommon-dev libwayland-dev libudev-dev libasound2-dev libssl-dev libgtk-3-dev
+      - name: Build Linux desktop GUI and scanner CLI
+        run: cargo build --release -p sentinel-linux --bin soban-linux --bin bdfr-sentinel-linux
+      - name: Package Debian binaries
+        run: |
+          mkdir -p dist/debian
+          cp target/release/soban-linux dist/debian/
+          cp target/release/bdfr-sentinel-linux dist/debian/
+          tar -C dist/debian -czf Soban-Debian-x64.tar.gz .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Soban-Debian-x64
+          path: Soban-Debian-x64.tar.gz
+          if-no-files-found: error
