@@ -561,7 +561,7 @@ fn resolved_theme(ctx: &egui::Context, mode: ThemeMode) -> egui::Theme {
 
 fn paint_theme_artwork(ctx: &egui::Context, skin: &UiSkin) {
     let rect = ctx.screen_rect();
-    let painter = ctx.layer_painter(egui::LayerId::background());
+    let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Background, egui::Id::new("soban-theme-artwork")));
     let accent = rgb(skin.accent);
     let tint = egui::Color32::from_rgba_unmultiplied(accent.r(), accent.g(), accent.b(), 18);
     match skin.wallpaper_style.as_str() {
