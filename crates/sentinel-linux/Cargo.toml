@@ -5,24 +5,26 @@ edition.workspace = true
 license.workspace = true
 description = "Linux-native platform adapters and scanner CLI for BDFR Sentinel"
 
-[dependencies]
-anyhow.workspace = true
-serde.workspace = true
-serde_json.workspace = true
-tracing.workspace = true
-sentinel-core = { path = "../sentinel-core" }
-sentinel-realtime = { path = "../sentinel-realtime" }
-sentinel-network = { path = "../sentinel-network" }
-
-[target.'cfg(target_os = "linux")'.dependencies]
-libc = "0.2"
+[lib]
+name = "sentinel_linux"
+path = "src/lib.rs"
 
 [[bin]]
 name = "bdfr-sentinel-linux"
 path = "src/main.rs"
 
 [dependencies]
+anyhow.workspace = true
 clap.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tracing.workspace = true
 walkdir.workspace = true
+sentinel-core = { path = "../sentinel-core" }
+sentinel-realtime = { path = "../sentinel-realtime" }
+sentinel-network = { path = "../sentinel-network" }
 sentinel-definitions = { path = "../sentinel-definitions" }
 sentinel-yara = { path = "../sentinel-yara" }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+libc = "0.2"
