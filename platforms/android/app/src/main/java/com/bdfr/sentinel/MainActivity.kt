@@ -118,8 +118,8 @@ class MainActivity : Activity() {
         root.addView(scanButton)
         setContentView(root)
         applyLocaleDirection()
-        applyTheme(root)
         updateLabels()
+        applyTheme(root)
     }
 
     private fun applyTheme(root: LinearLayout) {
@@ -139,7 +139,7 @@ class MainActivity : Activity() {
             "Obsidian" -> "◉  Soban"
             "Arctic" -> "❖  Soban"
             "Graphite" -> "⬡  Soban"
-            "High Contrast" -> "◆  SOBAN"
+            "High Contrast" -> "◆  Soban"
             else -> "⬡  Soban"
         }
     }
@@ -171,7 +171,13 @@ class MainActivity : Activity() {
     }
 
     private fun updateLabels() {
-        title.text = "Soban"
+        title.text = when (themeName) {
+            "Obsidian" -> "◉  Soban"
+            "Arctic" -> "❖  Soban"
+            "Graphite" -> "⬡  Soban"
+            "High Contrast" -> "◆  Soban"
+            else -> "⬡  Soban"
+        }
         status.text = if (NativeScanner.isAvailable) tr("ready") else tr("unavailable")
         scanButton.text = tr("choose")
         scanButton.isEnabled = NativeScanner.isAvailable
