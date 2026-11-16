@@ -39,7 +39,7 @@ class MainActivity : Activity() {
             )
         }
         val title = TextView(this).apply {
-            text = "BDFR Sentinel"
+            text = "Soban"
             textSize = 28f
             gravity = Gravity.CENTER
         }
