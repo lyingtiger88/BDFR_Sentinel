@@ -77,7 +77,7 @@ class MainActivity : Activity() {
                 val label = uri.lastPathSegment ?: "selected-document"
                 nativeScanner.scanBytes(bytes, label, filesDir.absolutePath)
             } catch (error: Exception) {
-                """{"status":"unavailable","error":"${error.message ?: "File could not be read"}"}"""
+                "Scan unavailable: " + (error.message ?: "File could not be read")
             }
             runOnUiThread {
                 status.text = result
