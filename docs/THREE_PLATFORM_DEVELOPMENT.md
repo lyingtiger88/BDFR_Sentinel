@@ -2,7 +2,7 @@
 
 ## Product rule
 
-BDFR Sentinel is developed as one product with three first-class targets:
+Soban (سوبان) is developed as one product with three first-class targets:
 - Windows — existing reference implementation and compatibility baseline.
 - Debian GNU/Linux — native Linux implementation.
 - Android — native mobile implementation.
