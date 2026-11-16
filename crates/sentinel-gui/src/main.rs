@@ -1209,6 +1209,37 @@ impl SentinelApp {
     }
 
     fn apply_protection_preferences(&mut self) {
+        for (index, rule) in self.protection_preferences.firewall_application_rules.iter_mut().enumerate() {
+            if !rule.enabled { continue; }
+            if !rule.application.is_file() {
+                self.status_text = format!("Firewall rule {} points to a missing executable.", index + 1);
+                return;
+            }
+            if let Some(text) = rule.remote_ports_text.as_deref() {
+                match parse_firewall_ports(text) {
+                    Ok(ports) => rule.remote_ports = ports,
+                    Err(error) => {
+                        self.status_text = format!("Firewall rule {} has invalid remote ports: {error}", index + 1);
+                        return;
+                    }
+                }
+            }
+            if let Some(text) = rule.local_ports_text.as_deref() {
+                match parse_firewall_ports(text) {
+                    Ok(ports) => rule.local_ports = ports,
+                    Err(error) => {
+                        self.status_text = format!("Firewall rule {} has invalid local ports: {error}", index + 1);
+                        return;
+                    }
+                }
+            }
+            if rule.remote_ports.len() > 32 || rule.local_ports.len() > 32
+                || rule.remote_ports.len().max(1) * rule.local_ports.len().max(1) > 32 {
+                self.status_text = format!("Firewall rule {} exceeds the 32-filter port combination limit.", index + 1);
+                return;
+            }
+        }
+
         let exe = service_executable_path();
         if !exe.is_file() {
             self.status_text = "Protection service executable was not found.".to_string();
