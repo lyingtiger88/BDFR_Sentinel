@@ -541,7 +541,7 @@ fn main() -> eframe::Result<()> {
     };
 
     eframe::run_native(
-        "BDFR Sentinel",
+        "Soban",
         options,
         Box::new(|cc| Ok(Box::new(SentinelApp::new(&cc.egui_ctx)))),
     )
@@ -1646,7 +1646,7 @@ impl SentinelApp {
                     .color(ui.visuals().weak_text_color()),
             );
             ui.label(
-                egui::RichText::new("BDFR Sentinel • Endpoint Security")
+                egui::RichText::new("Soban • Endpoint Security")
                     .size(11.0)
                     .color(ui.visuals().weak_text_color()),
             );
