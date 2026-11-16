@@ -32,5 +32,10 @@
     245
   ],
   "corner_radius": 10,
-  "compact": false
+  "compact": false,
+  "wallpaper_style": "circuit",
+  "icon_style": "shield-outline",
+  "illustration_style": "guardian",
+  "typography_scale": 1.05,
+  "control_scale": 1.08
 }
