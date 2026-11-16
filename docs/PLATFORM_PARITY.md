@@ -67,7 +67,7 @@ Keep Windows as the reference implementation and bring Debian GNU/Linux and Andr
 - No parity claim until feature matrix, tests and threat-model review support it.
 
 ## Current branch scope
-This branch establishes the cross-platform plan and native project boundaries. It does not claim Debian or Android protection is operational. Next increments: Linux service/realtime adapters and Android Kotlin/JNI scanner integration.
+This branch now includes: a Linux scan/watch CLI using the shared hash and YARA-X engines; conservative Linux capability discovery; an opt-in nftables blocklist isolated to the bdfr_sentinel table; explicit encrypted quarantine/restore commands with owner-only key storage and no-replace restore semantics; an Android Kotlin SAF shell; a Rust JNI buffer-scanning bridge; and a shared bounded in-memory scan API. Neither port is yet at full Windows parity. Debian still needs systemd lifecycle, signed updater wiring, full process/ransomware telemetry, broader firewall policy and packaging. Android still needs native ABI packaging, signed-definition installation/verification, Android Keystore quarantine, full UI/history/settings and background/VPN integrations.
 
 ## Build policy
 Do not run cargo build, cargo test, Gradle build, APK packaging, Debian packaging or any GitHub Actions workflow until the user explicitly authorizes a build. Source inspection and non-build review are permitted.
