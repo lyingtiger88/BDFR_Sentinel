@@ -52,9 +52,13 @@ pub struct ApplicationRule {
     pub protocol: FirewallProtocol,
     #[serde(default)]
     pub remote_ports: Vec<u16>,
-    /// Editable comma-separated port list persisted by the desktop rule editor.
+    #[serde(default)]
+    pub local_ports: Vec<u16>,
+    /// Editable comma-separated remote port list persisted by the desktop rule editor.
     #[serde(default)]
     pub remote_ports_text: Option<String>,
+    #[serde(default)]
+    pub local_ports_text: Option<String>,
     #[serde(default = "default_true")]
     pub enabled: bool,
 }
@@ -352,10 +356,10 @@ mod kernel {
         }
 
         for rule in policy.application_rules.iter().filter(|rule| rule.enabled) {
-            if rule.remote_ports.len() > 32 {
+            if rule.remote_ports.len() > 32 || rule.local_ports.len() > 32 || rule.remote_ports.len().max(1) * rule.local_ports.len().max(1) > 32 {
                 return Err(io::Error::new(io::ErrorKind::InvalidInput, "firewall rules may target at most 32 remote ports"));
             }
-            if rule.remote_ports.contains(&0) {
+            if rule.remote_ports.contains(&0) || rule.local_ports.contains(&0) {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidInput,
                     "firewall rules cannot target remote port 0",
@@ -476,22 +480,31 @@ mod kernel {
         };
 
         let mut count = 0;
-        let ports: Vec<Option<u16>> = if rule.remote_ports.is_empty() {
+        let remote_ports: Vec<Option<u16>> = if rule.remote_ports.is_empty() {
             vec![None]
         } else {
             rule.remote_ports.iter().copied().map(Some).collect()
         };
+        let local_ports: Vec<Option<u16>> = if rule.local_ports.is_empty() {
+            vec![None]
+        } else {
+            rule.local_ports.iter().copied().map(Some).collect()
+        };
 
         for ipv6 in [false, true] {
             for layer in layers_for(rule.direction, ipv6) {
-                for port in &ports {
+                for remote_port in &remote_ports {
+                    for local_port in &local_ports {
                     let app_condition = AppIdConditionBuilder::new()
                         .equal(&rule.application)?
                         .build();
 
                     let mut conditions = vec![app_condition];
-                    if let Some(port) = port {
+                    if let Some(port) = remote_port {
                         conditions.push(PortConditionBuilder::remote().equal(*port).build());
+                    }
+                    if let Some(port) = local_port {
+                        conditions.push(PortConditionBuilder::local().equal(*port).build());
                     }
 
                     match rule.protocol {
@@ -519,6 +532,7 @@ mod kernel {
                         conditions,
                     )?;
                     count += 1;
+                    }
                 }
             }
         }
