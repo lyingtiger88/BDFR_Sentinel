@@ -32,5 +32,10 @@
     240
   ],
   "corner_radius": 8,
-  "compact": true
+  "compact": true,
+  "wallpaper_style": "carbon-weave",
+  "icon_style": "engraved",
+  "illustration_style": "industrial",
+  "typography_scale": 1.05,
+  "control_scale": 1.08
 }
