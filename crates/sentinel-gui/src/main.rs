@@ -4161,3 +4161,27 @@ fn scan_and_send(
         }
     }
 }
+
+
+#[cfg(test)]
+mod firewall_editor_tests {
+    use super::parse_firewall_ports;
+
+    #[test]
+    fn parses_comma_separated_ports_and_deduplicates() {
+        assert_eq!(parse_firewall_ports("80, 443, 80").unwrap(), vec![80, 443]);
+    }
+
+    #[test]
+    fn empty_port_filter_means_any_port() {
+        assert!(parse_firewall_ports("").unwrap().is_empty());
+    }
+
+    #[test]
+    fn rejects_zero_invalid_and_excessive_ports() {
+        assert!(parse_firewall_ports("0").is_err());
+        assert!(parse_firewall_ports("https").is_err());
+        let many = (1..=33).map(|port| port.to_string()).collect::<Vec<_>>().join(",");
+        assert!(parse_firewall_ports(&many).is_err());
+    }
+}
