@@ -410,6 +410,19 @@ mod tests {
     }
 
     #[test]
+    fn scans_in_memory_buffer_without_filesystem_path() {
+        let mut registry = EngineRegistry::new();
+        registry.register(TestEngine);
+        let scanner = FileScanner::new(ScannerConfig::default(), registry);
+        let report = scanner.scan_bytes("content://selected/document", b"hello EVIL world").unwrap();
+
+        assert_eq!(report.path, "content://selected/document");
+        assert_eq!(report.verdict.level, ThreatLevel::Malicious);
+        assert_eq!(report.metadata.size, 16);
+        assert_eq!(report.metadata.sha256.len(), 64);
+    }
+
+    #[test]
     fn repeated_unchanged_scan_uses_cached_report() {
         let temp = std::env::temp_dir().join(format!(
             "bdfr-sentinel-cache-test-{}.bin",
