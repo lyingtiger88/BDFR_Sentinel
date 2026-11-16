@@ -16,4 +16,4 @@ Security requirements:
 - Firewall rules live only in a Sentinel-owned nftables table and support dry-run and rollback.
 - Installer/uninstaller preserves existing firewall rules and configuration backups.
 
-The Linux daemon is not yet a complete antivirus service. The native adapter crate currently provides capability discovery and path conventions only. Realtime orchestration, nftables enforcement, quarantine operations, updater wiring and Debian package scripts remain implementation tasks.
+The Linux port currently has a definition-backed CLI for on-demand file/directory scanning and post-write realtime watch events, plus conservative host capability discovery. The shared quarantine crate has Linux owner-only key-file support. This is not yet a complete service: systemd lifecycle, nftables enforcement, safe quarantine orchestration, signed updater wiring and Debian package scripts remain open.
