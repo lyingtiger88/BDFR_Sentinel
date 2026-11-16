@@ -622,6 +622,19 @@ mod tests {
     use super::*;
 
     #[test]
+    fn legacy_application_rules_deserialize_with_editor_defaults() {
+        let rule: ApplicationRule = serde_json::from_str(
+            r#"{"application":"C:\\Windows\\System32\\curl.exe"}"#
+        ).unwrap();
+        assert!(rule.name.is_empty());
+        assert!(rule.remote_ports.is_empty());
+        assert!(rule.local_ports.is_empty());
+        assert!(rule.remote_ports_text.is_none());
+        assert!(rule.local_ports_text.is_none());
+        assert!(rule.enabled);
+    }
+
+    #[test]
     fn matches_ipv4_and_cidr_entries() {
         let blocklist = NetworkBlocklist {
             entries: vec![
