@@ -10,7 +10,7 @@ use std::time::Duration;
 use walkdir::WalkDir;
 
 #[derive(Debug, Parser)]
-#[command(name = "bdfr-sentinel-linux", version, about = "BDFR Sentinel Debian scanner")]
+#[command(name = "bdfr-sentinel-linux", version, about = "Soban Debian security scanner")]
 struct Cli {
     #[arg(long, default_value = "/var/lib/bdfr-sentinel/definitions")]
     definitions_dir: PathBuf,
