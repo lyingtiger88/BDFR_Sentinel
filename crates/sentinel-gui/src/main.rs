@@ -183,7 +183,7 @@ fn rgb(value: [u8; 3]) -> egui::Color32 {
 fn built_in_skins() -> Vec<UiSkin> {
     vec![
         UiSkin {
-            name: "Sentinel Default".to_string(),
+            name: "Soban Default".to_string(),
             mode: ThemeMode::Dark,
             accent: [96, 205, 255],
             background: [20, 27, 36],
@@ -319,7 +319,7 @@ fn load_ui_preferences() -> UiPreferences {
         .ok()
         .and_then(|bytes| serde_json::from_slice(&bytes).ok())
         .unwrap_or(UiPreferences {
-            selected_skin: "Sentinel Default".to_string(),
+            selected_skin: "Soban Default".to_string(),
             language: default_language(),
         })
 }
@@ -470,7 +470,7 @@ fn focus_existing_instance() {
     }
 
     const SW_RESTORE: i32 = 9;
-    let title: Vec<u16> = OsStr::new("BDFR Sentinel")
+    let title: Vec<u16> = OsStr::new("Soban")
         .encode_wide()
         .chain(std::iter::once(0))
         .collect();
@@ -614,7 +614,9 @@ fn configure_style(ctx: &egui::Context, skin: &UiSkin) {
     let button_y = if skin.compact { 8.0 } else { 11.0 };
     style.spacing.item_spacing = egui::vec2(spacing, spacing);
     style.spacing.button_padding = egui::vec2(button_x, button_y);
-    style.spacing.indent = if skin.compact { 14.0 } else { 20.0 };\n    style.spacing.interact_size.y *= skin.control_scale.clamp(1.0, 1.25);\n    for font in style.text_styles.values_mut() { font.size *= skin.typography_scale.clamp(1.0, 1.2); }
+    style.spacing.indent = if skin.compact { 14.0 } else { 20.0 };
+    style.spacing.interact_size.y *= skin.control_scale.clamp(1.0, 1.25);
+    for font in style.text_styles.values_mut() { font.size *= skin.typography_scale.clamp(1.0, 1.2); }
     style.visuals = if theme == egui::Theme::Dark {
         egui::Visuals::dark()
     } else {
@@ -1014,7 +1016,7 @@ impl SentinelApp {
 
     fn import_skin(&mut self) {
         let Some(path) = rfd::FileDialog::new()
-            .add_filter("BDFR Sentinel Skin", &["json"])
+            .add_filter("Soban Skin", &["json"])
             .pick_file()
         else {
             return;
@@ -1214,7 +1216,9 @@ impl SentinelApp {
                 } else if stderr.is_empty() {
                     stdout
                 } else {
-                    format!("{stdout}\n\n{stderr}")
+                    format!("{stdout}
+
+{stderr}")
                 };
 
                 if output.status.success() {
@@ -1558,11 +1562,16 @@ impl SentinelApp {
         };
 
         let mut body = String::new();
-        body.push_str("BDFR Sentinel Scan Report\n");
-        body.push_str("=========================\n\n");
-        body.push_str(&format!("Target: {}\n", summary.target));
+        body.push_str("Soban Scan Report
+");
+        body.push_str("=========================
+
+");
+        body.push_str(&format!("Target: {}
+", summary.target));
         body.push_str(&format!(
-            "Status: {}\n",
+            "Status: {}
+",
             if summary.cancelled {
                 "Cancelled"
             } else {
@@ -1570,33 +1579,44 @@ impl SentinelApp {
             }
         ));
         body.push_str(&format!(
-            "Duration: {:.2}s\n",
+            "Duration: {:.2}s
+",
             summary.duration.as_secs_f64()
         ));
         body.push_str(&format!(
-            "Scanned: {} / {}\n",
+            "Scanned: {} / {}
+",
             summary.scanned, summary.total
         ));
-        body.push_str(&format!("Clean: {}\n", summary.clean));
-        body.push_str(&format!("Suspicious: {}\n", summary.suspicious));
-        body.push_str(&format!("Malicious: {}\n\n", summary.malicious));
+        body.push_str(&format!("Clean: {}
+", summary.clean));
+        body.push_str(&format!("Suspicious: {}
+", summary.suspicious));
+        body.push_str(&format!("Malicious: {}
+
+", summary.malicious));
 
         for report in &self.reports {
             if report.verdict.level == ThreatLevel::Clean {
                 continue;
             }
-            body.push_str(&format!("[{:?}] {}\n", report.verdict.level, report.path));
-            body.push_str(&format!("SHA-256: {}\n", report.metadata.sha256));
+            body.push_str(&format!("[{:?}] {}
+", report.verdict.level, report.path));
+            body.push_str(&format!("SHA-256: {}
+", report.metadata.sha256));
             for detection in &report.verdict.detections {
                 body.push_str(&format!(
-                    "  - {:?} / {:?}: {}\n",
+                    "  - {:?} / {:?}: {}
+",
                     detection.category, detection.level, detection.title
                 ));
                 if let Some(details) = &detection.details {
-                    body.push_str(&format!("    {}\n", details));
+                    body.push_str(&format!("    {}
+", details));
                 }
             }
-            body.push('\n');
+            body.push('
+');
         }
 
         match fs::write(&path, body) {
@@ -2194,7 +2214,8 @@ impl SentinelApp {
                     self.start_scan();
                 }
 
-                ui.add_space(2.0);\n            ui.checkbox(
+                ui.add_space(2.0);
+            ui.checkbox(
                     &mut self.auto_quarantine,
                     "Automatically quarantine confirmed malicious verdicts",
                 );
@@ -2469,7 +2490,21 @@ impl SentinelApp {
         );
 
         settings_card(ui, tr(&self.language, "appearance"), |ui| {
-            ui.horizontal(|ui| {\n                ui.label(tr(&self.language, "language"));\n                let mut selected_language = self.language.clone();\n                egui::ComboBox::from_id_salt("app_language")\n                    .selected_text(language_label(&self.language))\n                    .show_ui(ui, |ui| {\n                        for code in ["en", "fa", "bal", "ckb", "ar", "de", "fr", "es"] {\n                            ui.selectable_value(&mut selected_language, code.to_string(), language_label(code));\n                        }\n                    });\n                if selected_language != self.language { self.language = selected_language; save_ui_preferences(&self.skins[self.selected_skin_index].name, &self.language); }\n            });\n            ui.label(\n                egui::RichText::new(\n                    "Switch the complete Soban visual identity, not only its accent color. Imported JSON themes can define artwork and icon styles.",
+            ui.horizontal(|ui| {
+                ui.label(tr(&self.language, "language"));
+                let mut selected_language = self.language.clone();
+                egui::ComboBox::from_id_salt("app_language")
+                    .selected_text(language_label(&self.language))
+                    .show_ui(ui, |ui| {
+                        for code in ["en", "fa", "bal", "ckb", "ar", "de", "fr", "es"] {
+                            ui.selectable_value(&mut selected_language, code.to_string(), language_label(code));
+                        }
+                    });
+                if selected_language != self.language { self.language = selected_language; save_ui_preferences(&self.skins[self.selected_skin_index].name, &self.language); }
+            });
+            ui.label(
+                egui::RichText::new(
+                    "Switch the complete Soban visual identity, not only its accent color. Imported JSON themes can define artwork and icon styles.",
                 )
                 .color(ui.visuals().weak_text_color()),
             );
@@ -2479,7 +2514,7 @@ impl SentinelApp {
                 .skins
                 .get(self.selected_skin_index)
                 .map(|skin| skin.name.clone())
-                .unwrap_or_else(|| "Sentinel Default".to_string());
+                .unwrap_or_else(|| "Soban Default".to_string());
             let mut selected_name = current_name.clone();
 
             ui.horizontal_wrapped(|ui| {
@@ -2497,7 +2532,7 @@ impl SentinelApp {
                     self.import_skin();
                 }
                 if fluent_button(ui, "Reset default", false).clicked() {
-                    selected_name = "Sentinel Default".to_string();
+                    selected_name = "Soban Default".to_string();
                 }
             });
 
@@ -3168,11 +3203,11 @@ impl SentinelApp {
         page_header(
             ui,
             Page::About,
-            "About BDFR Sentinel",
+            "About Soban",
             "A modular Windows endpoint-security platform built around low-overhead, layered protection.",
         );
 
-        settings_card(ui, "BDFR Sentinel", |ui| {
+        settings_card(ui, "Soban", |ui| {
             ui.horizontal(|ui| {
                 ui.label(
                     egui::RichText::new("◉")
@@ -3180,7 +3215,7 @@ impl SentinelApp {
                         .color(ui.visuals().hyperlink_color),
                 );
                 ui.vertical(|ui| {
-                    ui.label(egui::RichText::new("BDFR Sentinel").size(26.0).strong());
+                    ui.label(egui::RichText::new("Soban").size(26.0).strong());
                     ui.label(
                         egui::RichText::new("Endpoint Security Platform")
                             .size(15.0)
@@ -3255,7 +3290,7 @@ impl SentinelApp {
             ui.label("Publisher: BDFR");
             ui.label("License: GPL-2.0");
             ui.hyperlink_to(
-                "Open BDFR Sentinel repository",
+                "Open Soban repository",
                 "https://github.com/lyingtiger88/BDFR_Sentinel",
             );
             ui.label(
@@ -3413,7 +3448,9 @@ impl eframe::App for SentinelApp {
             ctx.request_repaint_after(Duration::from_millis(900));
         }
 
-        if let Some(skin) = self.skins.get(self.selected_skin_index) { paint_theme_artwork(ctx, skin); }\n\n        let visuals = ctx.style().visuals.clone();
+        if let Some(skin) = self.skins.get(self.selected_skin_index) { paint_theme_artwork(ctx, skin); }
+
+        let visuals = ctx.style().visuals.clone();
 
         egui::SidePanel::left("sidebar")
             .resizable(false)
@@ -3739,7 +3776,7 @@ fn resource_card(
                     );
                     ui.add_space(6.0);
                     ui.label(
-                        egui::RichText::new("Live system + BDFR Sentinel usage")
+                        egui::RichText::new("Live system + Soban usage")
                             .size(11.0)
                             .color(ui.visuals().weak_text_color()),
                     );
@@ -3965,7 +4002,7 @@ fn scan_and_send(
             if auto_quarantine && malicious {
                 if let Some(store) = quarantine {
                     if let Err(err) =
-                        store.quarantine_file(path, "malware detected by BDFR Sentinel GUI")
+                        store.quarantine_file(path, "malware detected by Soban GUI")
                     {
                         let _ = tx.send(WorkerMessage::Error(format!(
                             "Quarantine failed for {}: {err}",
