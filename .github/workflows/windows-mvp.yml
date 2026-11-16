@@ -201,6 +201,28 @@ jobs:
             throw "Installer output was not generated"
           }
 
+      - name: Create BDFR self-signed test certificate and sign Windows outputs
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $cert = New-SelfSignedCertificate -Type CodeSigningCert -Subject "CN=BDFR Test Publisher" -CertStoreLocation "Cert:\CurrentUser\My" -KeyAlgorithm RSA -KeyLength 3072 -HashAlgorithm SHA256 -NotAfter (Get-Date).AddYears(3)
+          New-Item -ItemType Directory -Force -Path dist/signing | Out-Null
+          Export-Certificate -Cert $cert -FilePath dist/signing/BDFR-Test-Publisher.cer | Out-Null
+          $sdk = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin" -Filter signtool.exe -Recurse | Where-Object { $_.FullName -match "\\x64\\signtool.exe$" } | Sort-Object FullName -Descending | Select-Object -First 1
+          if (-not $sdk) { throw "Windows SDK SignTool not found" }
+          $files = @(
+            Get-ChildItem target\release -Filter *.exe -File
+            Get-Item installer\output\BDFR-Sentinel-Setup-x64.exe
+          )
+          if ($files.Count -lt 4) { throw "Expected Sentinel CLI, GUI, service and installer binaries" }
+          foreach ($file in $files) {
+            & $sdk.FullName sign /fd SHA256 /sha1 $cert.Thumbprint $file.FullName
+            if ($LASTEXITCODE -ne 0) { throw "Signing failed: $($file.Name)" }
+            & $sdk.FullName verify /pa /v $file.FullName
+            if ($LASTEXITCODE -ne 0) { throw "Signature verification failed: $($file.Name)" }
+          }
+          $files | ForEach-Object { Get-FileHash $_.FullName -Algorithm SHA256 } | ForEach-Object { "$($_.Hash) *$($_.Path)" } | Set-Content dist/signing/SHA256SUMS.txt
+          "BDFR self-signed test identity: $($cert.Thumbprint)" | Set-Content dist/signing/README.txt
       - name: Standalone installer smoke test
         shell: pwsh
         run: |
@@ -314,6 +336,7 @@ jobs:
           Copy-Item target\release\bdfr-sentinel-gui.exe dist\bdfr-sentinel-gui.exe
           Copy-Item target\release\bdfr-sentinel-service.exe dist\bdfr-sentinel-service.exe
           Copy-Item README.md dist\README.md
+          if (Test-Path dist\signing) { Write-Host "Signing evidence already staged in dist." }
           if (Test-Path docs\MVP.md) { Copy-Item docs\MVP.md dist\MVP.md }
           if (Test-Path Definitions) { Copy-Item Definitions dist\Definitions -Recurse }
           if (Test-Path scripts\Install-Protection.ps1) { Copy-Item scripts\Install-Protection.ps1 dist\Install-Protection.ps1 }
