@@ -1664,6 +1664,7 @@ impl SentinelApp {
             } else {
                 ui.visuals().text_color()
             },
+            self.skins.get(self.selected_skin_index).map(|skin| skin.icon_style.as_str()).unwrap_or("outline"),
         );
 
         ui.painter().text(
@@ -3556,6 +3557,7 @@ fn page_header(ui: &mut egui::Ui, page: Page, title: &str, subtitle: &str) {
         page,
         icon_rect.shrink(10.0),
         ui.visuals().hyperlink_color,
+        "outline",
     );
 
     let text_left = icon_rect.right() + 14.0;
@@ -3577,8 +3579,9 @@ fn page_header(ui: &mut egui::Ui, page: Page, title: &str, subtitle: &str) {
     ui.add_space(10.0);
 }
 
-fn draw_page_icon(painter: &egui::Painter, page: Page, rect: egui::Rect, color: egui::Color32) {
-    let stroke = egui::Stroke::new(1.8_f32, color);
+fn draw_page_icon(painter: &egui::Painter, page: Page, rect: egui::Rect, color: egui::Color32, icon_style: &str) {
+    let width = if icon_style.contains("bold") || icon_style.contains("solid") { 2.7 } else if icon_style.contains("engraved") { 1.2 } else { 1.8 };
+    let stroke = egui::Stroke::new(width, color);
     let c = rect.center();
     let w = rect.width();
     let h = rect.height();
