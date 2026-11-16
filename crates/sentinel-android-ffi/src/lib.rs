@@ -10,6 +10,8 @@ use std::path::{Path, PathBuf};
 const MOBILE_MAX_FILE_SIZE: u64 = 32 * 1024 * 1024;
 
 fn build_scanner(app_data_dir: &Path) -> Result<FileScanner> {
+    // The host updater must verify signatures before populating this app-private directory.
+    // Signature verification is not performed by this JNI bridge itself.
     let root = app_data_dir.join("verified-definitions");
     if !root.is_dir() {
         bail!("verified definitions directory is not installed");
