@@ -1,0 +1,12 @@
+{
+  "language": "App-Sprache",
+  "direction": "ltr",
+  "dashboard": "Sicherheitsübersicht",
+  "scan": "Scan",
+  "quarantine": "Quarantäne",
+  "history": "Verlauf",
+  "settings": "Einstellungen",
+  "about": "Über",
+  "appearance": "Darstellung und Designs",
+  "choose_file": "Datei zum Scannen auswählen"
+}
