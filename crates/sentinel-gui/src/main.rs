@@ -2969,13 +2969,11 @@ impl SentinelApp {
                             let port_text = rule.remote_ports_text.get_or_insert_with(|| {
                                 rule.remote_ports.iter().map(u16::to_string).collect::<Vec<_>>().join(", ")
                             });
-                            let response = ui.add(egui::TextEdit::singleline(port_text).desired_width(220.0)
+                            ui.add(egui::TextEdit::singleline(port_text).desired_width(220.0)
                                 .hint_text("Any port, or e.g. 80, 443, 8080"));
-                            if response.changed() {
-                                match parse_firewall_ports(port_text) {
-                                    Ok(ports) => rule.remote_ports = ports,
-                                    Err(error) => invalid_port_rule = Some((index, error)),
-                                }
+                            match parse_firewall_ports(port_text) {
+                                Ok(ports) => rule.remote_ports = ports,
+                                Err(error) => invalid_port_rule = Some((index, error)),
                             }
                         });
                         if let Some((invalid_index, error)) = &invalid_port_rule {
@@ -2986,13 +2984,11 @@ impl SentinelApp {
                             let local_text = rule.local_ports_text.get_or_insert_with(|| {
                                 rule.local_ports.iter().map(u16::to_string).collect::<Vec<_>>().join(", ")
                             });
-                            let response = ui.add(egui::TextEdit::singleline(local_text).desired_width(220.0)
+                            ui.add(egui::TextEdit::singleline(local_text).desired_width(220.0)
                                 .hint_text("Any local port, or e.g. 443, 8443"));
-                            if response.changed() {
-                                match parse_firewall_ports(local_text) {
-                                    Ok(ports) => rule.local_ports = ports,
-                                    Err(error) => invalid_port_rule = Some((index, format!("Local ports: {error}"))),
-                                }
+                            match parse_firewall_ports(local_text) {
+                                Ok(ports) => rule.local_ports = ports,
+                                Err(error) => invalid_port_rule = Some((index, format!("Local ports: {error}"))),
                             }
                         });
                         ui.label(egui::RichText::new(rule.application.display().to_string())
