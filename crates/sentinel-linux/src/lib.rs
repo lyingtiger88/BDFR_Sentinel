@@ -4,6 +4,8 @@
 #[cfg(target_os = "linux")]
 pub mod host;
 #[cfg(target_os = "linux")]
+pub mod firewall;
+#[cfg(target_os = "linux")]
 pub mod paths;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
