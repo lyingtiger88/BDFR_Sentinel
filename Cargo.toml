@@ -22,6 +22,7 @@ members = [
     "crates/sentinel-removable",
     "crates/sentinel-network",
     "crates/sentinel-linux",
+    "crates/sentinel-android-ffi",
 ]
 
 [workspace.package]
