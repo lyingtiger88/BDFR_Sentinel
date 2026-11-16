@@ -1,0 +1,12 @@
+{
+  "language": "Idioma de la aplicación",
+  "direction": "ltr",
+  "dashboard": "Panel de seguridad",
+  "scan": "Escanear",
+  "quarantine": "Cuarentena",
+  "history": "Historial",
+  "settings": "Configuración",
+  "about": "Acerca de",
+  "appearance": "Apariencia y temas",
+  "choose_file": "Elegir archivo para analizar"
+}
