@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Soban
+GenericName=Antivirus and Endpoint Security
+Comment=Security dashboard, malware scanning and Linux protection status
+Exec=soban-linux
+Terminal=false
+Categories=Security;System;
+StartupNotify=true
