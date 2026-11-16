@@ -197,8 +197,40 @@ impl QuarantineStore {
                 .unwrap_or("sentinel")
         ));
         fs::write(&temp, data)?;
-        fs::rename(temp, path)
+        rename_no_replace(&temp, path)
     }
+}
+
+
+#[cfg(target_os = "linux")]
+fn rename_no_replace(source: &Path, destination: &Path) -> Result<(), io::Error> {
+    use std::ffi::CString;
+    use std::os::unix::ffi::OsStrExt;
+
+    let source = CString::new(source.as_os_str().as_bytes())
+        .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "source path contains NUL"))?;
+    let destination = CString::new(destination.as_os_str().as_bytes())
+        .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "destination path contains NUL"))?;
+
+    // Linux renameat2(RENAME_NOREPLACE): atomically refuse to overwrite an existing target.
+    let result = unsafe {
+        libc::renameat2(
+            libc::AT_FDCWD,
+            source.as_ptr(),
+            libc::AT_FDCWD,
+            destination.as_ptr(),
+            1,
+        )
+    };
+    if result == 0 { Ok(()) } else { Err(io::Error::last_os_error()) }
+}
+
+#[cfg(not(target_os = "linux"))]
+fn rename_no_replace(source: &Path, destination: &Path) -> Result<(), io::Error> {
+    if destination.exists() {
+        return Err(io::Error::new(io::ErrorKind::AlreadyExists, "destination already exists"));
+    }
+    fs::rename(source, destination)
 }
 
 fn sha256_hex(data: &[u8]) -> String {
