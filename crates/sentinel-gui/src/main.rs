@@ -602,6 +602,43 @@ fn paint_theme_artwork(ctx: &egui::Context, skin: &UiSkin) {
             }
         }
     }
+
+    let motif_alpha = 24;
+    let motif = egui::Color32::from_rgba_unmultiplied(accent.r(), accent.g(), accent.b(), motif_alpha);
+    match skin.illustration_style.as_str() {
+        "orbital" => {
+            let center = egui::pos2(rect.right() - 145.0, rect.top() + 145.0);
+            for radius in [34.0, 58.0, 82.0] {
+                painter.circle_stroke(center, radius, egui::Stroke::new(1.5, motif));
+            }
+            painter.circle_filled(center, 7.0, motif);
+        }
+        "crystal" => {
+            let center = egui::pos2(rect.right() - 125.0, rect.top() + 125.0);
+            let points = vec![center + egui::vec2(0.0, -68.0), center + egui::vec2(48.0, 0.0),
+                center + egui::vec2(0.0, 68.0), center + egui::vec2(-48.0, 0.0)];
+            painter.add(egui::Shape::closed_line(points, egui::Stroke::new(2.0, motif)));
+        }
+        "industrial" => {
+            for i in 0..8 {
+                let offset = i as f32 * 18.0;
+                painter.line_segment([
+                    egui::pos2(rect.right() - 180.0 + offset, rect.top()),
+                    egui::pos2(rect.right(), rect.top() + 180.0 - offset)
+                ], egui::Stroke::new(1.0, motif));
+            }
+        }
+        "guardian" => {
+            let center = egui::pos2(rect.right() - 100.0, rect.top() + 110.0);
+            let shield = vec![
+                center + egui::vec2(0.0, -54.0), center + egui::vec2(43.0, -35.0),
+                center + egui::vec2(36.0, 22.0), center + egui::vec2(0.0, 58.0),
+                center + egui::vec2(-36.0, 22.0), center + egui::vec2(-43.0, -35.0)
+            ];
+            painter.add(egui::Shape::closed_line(shield, egui::Stroke::new(2.2, motif)));
+        }
+        _ => {}
+    }
 }
 
 fn configure_style(ctx: &egui::Context, skin: &UiSkin) {
