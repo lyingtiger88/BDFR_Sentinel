@@ -555,6 +555,55 @@ fn resolved_theme(ctx: &egui::Context, mode: ThemeMode) -> egui::Theme {
     }
 }
 
+
+fn paint_theme_artwork(ctx: &egui::Context, skin: &UiSkin) {
+    let rect = ctx.screen_rect();
+    let painter = ctx.layer_painter(egui::LayerId::background());
+    let accent = rgb(skin.accent);
+    let tint = egui::Color32::from_rgba_unmultiplied(accent.r(), accent.g(), accent.b(), 18);
+    match skin.wallpaper_style.as_str() {
+        "circuit" => {
+            let step = 42.0;
+            let mut x = rect.left();
+            while x < rect.right() {
+                painter.line_segment([egui::pos2(x, rect.top()), egui::pos2(x, rect.bottom())],
+                    egui::Stroke::new(0.5, tint));
+                x += step;
+            }
+            let mut y = rect.top();
+            while y < rect.bottom() {
+                painter.line_segment([egui::pos2(rect.left(), y), egui::pos2(rect.right(), y)],
+                    egui::Stroke::new(0.5, tint));
+                y += step;
+            }
+        }
+        "aurora" => {
+            for i in 0..5 {
+                let center = egui::pos2(rect.right() - 90.0 - i as f32 * 35.0, rect.top() + 90.0);
+                painter.circle_stroke(center, 90.0 + i as f32 * 30.0,
+                    egui::Stroke::new(1.2, tint));
+            }
+        }
+        "carbon-weave" => {
+            for i in 0..28 {
+                let y = rect.top() + i as f32 * 24.0;
+                painter.line_segment([egui::pos2(rect.left(), y), egui::pos2(rect.right(), y)],
+                    egui::Stroke::new(0.6, tint));
+            }
+        }
+        _ => {
+            for i in 0..9 {
+                let radius = 18.0 + i as f32 * 24.0;
+                painter.circle_stroke(
+                    egui::pos2(rect.right() - 35.0, rect.bottom() - 25.0),
+                    radius,
+                    egui::Stroke::new(1.0, tint),
+                );
+            }
+        }
+    }
+}
+
 fn configure_style(ctx: &egui::Context, skin: &UiSkin) {
     let theme = resolved_theme(ctx, skin.mode);
     ctx.set_theme(theme);
@@ -1621,7 +1670,7 @@ impl SentinelApp {
                     .color(ui.visuals().hyperlink_color),
             );
             ui.vertical(|ui| {
-                ui.label(egui::RichText::new("Soban").size(19.0).strong());
+                ui.label(egui::RichText::new("Soban").size(21.0).strong());
                 ui.label(
                     egui::RichText::new("Endpoint Security")
                         .size(12.0)
@@ -2145,7 +2194,7 @@ impl SentinelApp {
                     self.start_scan();
                 }
 
-                ui.checkbox(
+                ui.add_space(2.0);\n            ui.checkbox(
                     &mut self.auto_quarantine,
                     "Automatically quarantine confirmed malicious verdicts",
                 );
@@ -3364,7 +3413,7 @@ impl eframe::App for SentinelApp {
             ctx.request_repaint_after(Duration::from_millis(900));
         }
 
-        let visuals = ctx.style().visuals.clone();
+        if let Some(skin) = self.skins.get(self.selected_skin_index) { paint_theme_artwork(ctx, skin); }\n\n        let visuals = ctx.style().visuals.clone();
 
         egui::SidePanel::left("sidebar")
             .resizable(false)
