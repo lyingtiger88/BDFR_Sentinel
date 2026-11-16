@@ -41,6 +41,8 @@ pub enum FirewallProtocol {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ApplicationRule {
+    #[serde(default)]
+    pub name: String,
     pub application: PathBuf,
     #[serde(default)]
     pub direction: FirewallDirection,
@@ -50,6 +52,9 @@ pub struct ApplicationRule {
     pub protocol: FirewallProtocol,
     #[serde(default)]
     pub remote_ports: Vec<u16>,
+    /// Editable comma-separated port list persisted by the desktop rule editor.
+    #[serde(default)]
+    pub remote_ports_text: Option<String>,
     #[serde(default = "default_true")]
     pub enabled: bool,
 }
@@ -272,8 +277,8 @@ mod kernel {
             let transaction = Transaction::new(&mut engine)?;
 
             SubLayerBuilder::default()
-                .name("BDFR Sentinel Kernel Firewall")
-                .description("BDFR Sentinel WFP/ALE kernel-enforced firewall policy")
+                .name("Soban Kernel Firewall")
+                .description("Soban WFP/ALE kernel-enforced firewall policy")
                 .guid(SUBLAYER_GUID)
                 .weight(0x7f00)
                 .add(&transaction)?;
@@ -347,6 +352,9 @@ mod kernel {
         }
 
         for rule in policy.application_rules.iter().filter(|rule| rule.enabled) {
+            if rule.remote_ports.len() > 32 {
+                return Err(io::Error::new(io::ErrorKind::InvalidInput, "firewall rules may target at most 32 remote ports"));
+            }
             if rule.remote_ports.contains(&0) {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidInput,
@@ -367,7 +375,7 @@ mod kernel {
         for layer in [Layer::ConnectV4, Layer::AcceptV4] {
             add_filter(
                 transaction,
-                "BDFR Sentinel Allow IPv4 Loopback",
+                "Soban Allow IPv4 Loopback",
                 "Keep local IPv4 IPC traffic available",
                 ActionType::Permit,
                 layer,
@@ -383,7 +391,7 @@ mod kernel {
         for layer in [Layer::ConnectV6, Layer::AcceptV6] {
             add_filter(
                 transaction,
-                "BDFR Sentinel Allow IPv6 Loopback",
+                "Soban Allow IPv6 Loopback",
                 "Keep local IPv6 IPC traffic available",
                 ActionType::Permit,
                 layer,
@@ -406,7 +414,7 @@ mod kernel {
         ] {
             add_filter(
                 transaction,
-                "BDFR Sentinel Default Deny",
+                "Soban Default Deny",
                 "Default-deny WFP policy for connections without an explicit allow rule",
                 ActionType::Block,
                 layer,
@@ -438,7 +446,7 @@ mod kernel {
         for layer in layers {
             add_filter(
                 transaction,
-                "BDFR Sentinel Threat Block",
+                "Soban Threat Block",
                 "Block a remote address from the Sentinel network reputation list",
                 ActionType::Block,
                 *layer,
@@ -496,10 +504,7 @@ mod kernel {
                         }
                     }
 
-                    add_filter(
-                        transaction,
-                        "BDFR Sentinel Application Rule",
-                        "Per-application WFP policy",
+                    let display_name = if rule.name.trim().is_empty() {\n                        "Soban application rule".to_string()\n                    } else {\n                        format!("Soban: {}", rule.name.trim())\n                    };\n                    add_filter(\n                        transaction,\n                        &display_name,\n                        "Per-application WFP policy",
                         action,
                         layer,
                         weight,
