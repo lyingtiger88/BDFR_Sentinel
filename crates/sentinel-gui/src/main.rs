@@ -61,11 +61,115 @@ struct UiSkin {
     corner_radius: u8,
     #[serde(default)]
     compact: bool,
+    #[serde(default = "default_wallpaper_style")]
+    wallpaper_style: String,
+    #[serde(default = "default_icon_style")]
+    icon_style: String,
+    #[serde(default = "default_illustration_style")]
+    illustration_style: String,
+    #[serde(default = "default_typography_scale")]
+    typography_scale: f32,
+    #[serde(default = "default_control_scale")]
+    control_scale: f32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct UiPreferences {
     selected_skin: String,
+    #[serde(default = "default_language")]
+    language: String,
+}
+
+fn default_language() -> String { "en".to_string() }
+fn default_wallpaper_style() -> String { "shield-grid".to_string() }
+fn default_icon_style() -> String { "line".to_string() }
+fn default_illustration_style() -> String { "geometric".to_string() }
+fn default_typography_scale() -> f32 { 1.04 }
+fn default_control_scale() -> f32 { 1.08 }
+
+fn language_label(code: &str) -> &'static str {
+    match code {
+        "fa" => "فارسی",
+        "bal" => "Balochi",
+        "ckb" => "کوردی (سۆرانی)",
+        "ar" => "العربية",
+        "de" => "Deutsch",
+        "fr" => "Français",
+        "es" => "Español",
+        _ => "English",
+    }
+}
+
+fn tr(language: &str, key: &str) -> &'static str {
+    match (language, key) {
+        ("fa", "dashboard") => "داشبورد امنیت",
+        ("fa", "scan") => "اسکن",
+        ("fa", "quarantine") => "قرنطینه",
+        ("fa", "history") => "تاریخچه",
+        ("fa", "settings") => "تنظیمات",
+        ("fa", "about") => "درباره",
+        ("fa", "appearance") => "ظاهر و پوسته‌ها",
+        ("fa", "language") => "زبان برنامه",
+        ("bal", "dashboard") => "پاسبانءِ ڈیش بورڈ",
+        ("bal", "scan") => "اسکین",
+        ("bal", "quarantine") => "قرنطین",
+        ("bal", "history") => "تاریخ",
+        ("bal", "settings") => "ترتیب",
+        ("bal", "about") => "باروا",
+        ("bal", "appearance") => "رنگ و نمونگ",
+        ("bal", "language") => "زبان",
+        ("ckb", "dashboard") => "پەڕەی سەرەکی",
+        ("ckb", "scan") => "پشکنین",
+        ("ckb", "quarantine") => "قەرەنتینە",
+        ("ckb", "history") => "مێژوو",
+        ("ckb", "settings") => "ڕێکخستنەکان",
+        ("ckb", "about") => "دەربارە",
+        ("ckb", "appearance") => "ڕووکار و ڕووپۆشەکان",
+        ("ckb", "language") => "زمانی بەرنامە",
+        ("ar", "dashboard") => "لوحة الأمان",
+        ("ar", "scan") => "فحص",
+        ("ar", "quarantine") => "العزل",
+        ("ar", "history") => "السجل",
+        ("ar", "settings") => "الإعدادات",
+        ("ar", "about") => "حول",
+        ("ar", "appearance") => "المظهر والسمات",
+        ("ar", "language") => "لغة التطبيق",
+        ("de", "dashboard") => "Sicherheitsübersicht",
+        ("de", "scan") => "Scan",
+        ("de", "quarantine") => "Quarantäne",
+        ("de", "history") => "Verlauf",
+        ("de", "settings") => "Einstellungen",
+        ("de", "about") => "Über",
+        ("de", "appearance") => "Darstellung und Designs",
+        ("de", "language") => "App-Sprache",
+        ("fr", "dashboard") => "Tableau de sécurité",
+        ("fr", "scan") => "Analyser",
+        ("fr", "quarantine") => "Quarantaine",
+        ("fr", "history") => "Historique",
+        ("fr", "settings") => "Paramètres",
+        ("fr", "about") => "À propos",
+        ("fr", "appearance") => "Apparence et thèmes",
+        ("fr", "language") => "Langue de l’application",
+        ("es", "dashboard") => "Panel de seguridad",
+        ("es", "scan") => "Escanear",
+        ("es", "quarantine") => "Cuarentena",
+        ("es", "history") => "Historial",
+        ("es", "settings") => "Configuración",
+        ("es", "about") => "Acerca de",
+        ("es", "appearance") => "Apariencia y temas",
+        ("es", "language") => "Idioma de la aplicación",
+        _ => match key {
+            "dashboard" => "Security dashboard",
+            "scan" => "Scan",
+            "quarantine" => "Quarantine",
+            "history" => "History",
+            "settings" => "Settings",
+            "about" => "About",
+            "appearance" => "Appearance & themes",
+            "language" => "Application language",
+            _ => "",
+        },
+    }
 }
 
 fn default_skin_corner_radius() -> u8 {
@@ -214,16 +318,18 @@ fn load_ui_preferences() -> UiPreferences {
         .and_then(|bytes| serde_json::from_slice(&bytes).ok())
         .unwrap_or(UiPreferences {
             selected_skin: "Sentinel Default".to_string(),
+            language: default_language(),
         })
 }
 
-fn save_ui_preferences(selected_skin: &str) {
+fn save_ui_preferences(selected_skin: &str, language: &str) {
     let path = ui_preferences_path();
     if let Some(parent) = path.parent() {
         let _ = fs::create_dir_all(parent);
     }
     let preferences = UiPreferences {
         selected_skin: selected_skin.to_string(),
+        language: language.to_string(),
     };
     if let Ok(bytes) = serde_json::to_vec_pretty(&preferences) {
         let _ = fs::write(path, bytes);
@@ -426,7 +532,7 @@ fn main() -> eframe::Result<()> {
 
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_title("BDFR Sentinel")
+            .with_title("Soban")
             .with_inner_size([1240.0, 800.0])
             .with_min_inner_size([980.0, 640.0]),
         ..Default::default()
@@ -452,12 +558,12 @@ fn configure_style(ctx: &egui::Context, skin: &UiSkin) {
     ctx.set_theme(theme);
 
     let mut style = (*ctx.style()).clone();
-    let spacing = if skin.compact { 8.0 } else { 12.0 };
+    let spacing = if skin.compact { 9.0 } else { 13.0 };
     let button_x = if skin.compact { 13.0 } else { 18.0 };
     let button_y = if skin.compact { 8.0 } else { 11.0 };
     style.spacing.item_spacing = egui::vec2(spacing, spacing);
     style.spacing.button_padding = egui::vec2(button_x, button_y);
-    style.spacing.indent = if skin.compact { 14.0 } else { 20.0 };
+    style.spacing.indent = if skin.compact { 14.0 } else { 20.0 };\n    style.spacing.interact_size.y *= skin.control_scale.clamp(1.0, 1.25);\n    for font in style.text_styles.values_mut() { font.size *= skin.typography_scale.clamp(1.0, 1.2); }
     style.visuals = if theme == egui::Theme::Dark {
         egui::Visuals::dark()
     } else {
@@ -715,6 +821,7 @@ struct SentinelApp {
     sentinel_process_count: usize,
     skins: Vec<UiSkin>,
     selected_skin_index: usize,
+    language: String,
     applied_skin_name: String,
     applied_theme: egui::Theme,
     gauge_order: [GaugeKind; 2],
@@ -758,6 +865,7 @@ impl SentinelApp {
 
         let mut app = Self {
             page: Page::Dashboard,
+            language: ui_preferences.language.clone(),
             target: None,
             available_drives: enumerate_scan_drives(),
             scan_target_label: "Unknown".to_string(),
@@ -839,11 +947,11 @@ impl SentinelApp {
             return;
         };
         let resolved = resolved_theme(ctx, skin.mode);
-        if resolved != self.applied_theme || skin.name != self.applied_skin_name {
+        if resolved != self.applied_theme || format!("{}:{}:{}:{}", skin.name, skin.wallpaper_style, skin.icon_style, skin.illustration_style) != self.applied_skin_name {
             configure_style(ctx, skin);
             self.applied_theme = resolved;
-            self.applied_skin_name = skin.name.clone();
-            save_ui_preferences(&skin.name);
+            self.applied_skin_name = format!("{}:{}:{}:{}", skin.name, skin.wallpaper_style, skin.icon_style, skin.illustration_style);
+            save_ui_preferences(&skin.name, &self.language);
         }
     }
 
@@ -1511,7 +1619,7 @@ impl SentinelApp {
                     .color(ui.visuals().hyperlink_color),
             );
             ui.vertical(|ui| {
-                ui.label(egui::RichText::new("BDFR Sentinel").size(19.0).strong());
+                ui.label(egui::RichText::new("Soban").size(19.0).strong());
                 ui.label(
                     egui::RichText::new("Endpoint Security")
                         .size(12.0)
@@ -1521,12 +1629,12 @@ impl SentinelApp {
         });
         ui.add_space(28.0);
 
-        self.nav_button(ui, Page::Dashboard, "Dashboard");
-        self.nav_button(ui, Page::Scan, "Scan");
-        self.nav_button(ui, Page::Quarantine, "Quarantine");
-        self.nav_button(ui, Page::History, "History");
-        self.nav_button(ui, Page::Settings, "Settings");
-        self.nav_button(ui, Page::About, "About");
+        self.nav_button(ui, Page::Dashboard, tr(&self.language, "dashboard"));
+        self.nav_button(ui, Page::Scan, tr(&self.language, "scan"));
+        self.nav_button(ui, Page::Quarantine, tr(&self.language, "quarantine"));
+        self.nav_button(ui, Page::History, tr(&self.language, "history"));
+        self.nav_button(ui, Page::Settings, tr(&self.language, "settings"));
+        self.nav_button(ui, Page::About, tr(&self.language, "about"));
 
         ui.with_layout(egui::Layout::bottom_up(egui::Align::LEFT), |ui| {
             ui.add_space(8.0);
@@ -2305,14 +2413,12 @@ impl SentinelApp {
         page_header(
             ui,
             Page::Settings,
-            "Settings",
-            "Customize Sentinel appearance, protection engines and detection behavior.",
+            tr(&self.language, "settings"),
+            "Customize Soban appearance, protection engines and detection behavior.",
         );
 
-        settings_card(ui, "Appearance & skins", |ui| {
-            ui.label(
-                egui::RichText::new(
-                    "Switch the entire Sentinel presentation layer instantly. Imported JSON skins are stored per user.",
+        settings_card(ui, tr(&self.language, "appearance"), |ui| {
+            ui.horizontal(|ui| {\n                ui.label(tr(&self.language, "language"));\n                let mut selected_language = self.language.clone();\n                egui::ComboBox::from_id_salt("app_language")\n                    .selected_text(language_label(&self.language))\n                    .show_ui(ui, |ui| {\n                        for code in ["en", "fa", "bal", "ckb", "ar", "de", "fr", "es"] {\n                            ui.selectable_value(&mut selected_language, code.to_string(), language_label(code));\n                        }\n                    });\n                if selected_language != self.language { self.language = selected_language; save_ui_preferences(&self.skins[self.selected_skin_index].name, &self.language); }\n            });\n            ui.label(\n                egui::RichText::new(\n                    "Switch the complete Soban visual identity, not only its accent color. Imported JSON themes can define artwork and icon styles.",
                 )
                 .color(ui.visuals().weak_text_color()),
             );
