@@ -193,6 +193,7 @@ fn built_in_skins() -> Vec<UiSkin> {
             text: [245, 245, 245],
             corner_radius: 10,
             compact: false,
+            wallpaper_style: "shield-grid".to_string(), icon_style: "outline".to_string(), illustration_style: "geometric".to_string(), typography_scale: 1.04, control_scale: 1.08,
         },
         UiSkin {
             name: "Obsidian".to_string(),
@@ -229,6 +230,7 @@ fn built_in_skins() -> Vec<UiSkin> {
             text: [240, 240, 240],
             corner_radius: 8,
             compact: true,
+            wallpaper_style: "carbon-weave".to_string(), icon_style: "solid".to_string(), illustration_style: "minimal".to_string(), typography_scale: 1.04, control_scale: 1.08,
         },
         UiSkin {
             name: "High Contrast".to_string(),
