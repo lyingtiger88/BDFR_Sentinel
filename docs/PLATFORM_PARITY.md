@@ -1,4 +1,4 @@
-# Soban — Debian and Android Platform Parity
+# soban — Debian and Android Platform Parity
 
 ## Goal
 Keep Windows as the reference implementation and bring Debian GNU/Linux and Android forward against the same versioned security-core contracts. Platform ports must not pretend to have kernel privileges or visibility that the operating system does not grant.
