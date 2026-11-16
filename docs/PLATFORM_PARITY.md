@@ -95,3 +95,14 @@ For every subsequent feature request, update all three columns in the same work 
 
 ## Build policy
 Do not run cargo build, cargo test, Gradle build, APK packaging, Debian packaging or any GitHub Actions workflow until the user explicitly authorizes a build. Source inspection and non-build review are permitted.
+
+
+## Soban visual themes and localization
+
+- Product display name: **Soban** (English) and **سوبان** (Persian).
+- Windows/desktop egui theme model now supports wallpaper style, icon stroke style, illustration style, typography scale and control scale in addition to color palette.
+- Android includes selectable visual presets that change the surface palette and guardian mark, plus persistent language selection.
+- Language packs are supplied for English, Persian, Balochi, Kurdish Sorani, Arabic, German, French and Spanish.
+- Current translation coverage is an initial UI slice (navigation, appearance/language labels and Android scan entry screen), not yet every dialog, alert, report and settings field.
+- Balochi and Kurdish Sorani strings are first drafts and require native-speaker review before production release. Kurdish is Sorani (ckb); Balochi is represented by a generic Latin/Arabic script draft and needs dialect/script selection review.
+- Debian currently has a CLI rather than a completed desktop interface; the locale packs are present but CLI-wide localization is not yet wired.
