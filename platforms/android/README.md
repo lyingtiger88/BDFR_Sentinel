@@ -1,4 +1,4 @@
-# Soban for Android
+# soban for Android
 
 Android is a companion endpoint-security app backed by the shared Rust detection core. It is not a device-wide antivirus: scoped storage, app sandboxing and background execution limits define coverage.
 
