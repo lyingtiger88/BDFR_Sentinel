@@ -119,3 +119,16 @@ The Soban Windows UI now exposes editable per-application WFP rules:
 - Legacy serialized rules remain readable through serde defaults for the new metadata and local-port fields.
 
 The current live connection list is an endpoint snapshot, not a packet-capture stream. Dynamic connection termination, remote-IP block actions, rule scheduling, profile import/export and a full rule-priority editor remain future work.
+
+
+## Soban Debian desktop application
+
+A native Linux desktop target is available as `soban-linux`, separate from the existing `bdfr-sentinel-linux` CLI. It uses the workspace eframe/egui stack and provides:
+- A dedicated left navigation rail and top status bar.
+- Overview cards for product, firewall prerequisite and privilege state.
+- File/folder scan selection and scan-result output through the companion scanner CLI.
+- Linux capability inspection (kernel, inotify, fanotify, nftables, eBPF, udev and privilege state).
+- A firewall status surface that accurately distinguishes detected nftables support from active enforcement.
+- Full-surface dark/light appearance and selectable accent colors.
+
+The Debian build job produces both the GUI and scanner CLI. The Linux firewall editor is intentionally not represented as complete: the current kernel backend only installs an isolated outbound IP/CIDR nftables blocklist. Application-aware rules, inbound controls, local/remote ports, connection termination and event history require a dedicated Linux policy/service implementation.
