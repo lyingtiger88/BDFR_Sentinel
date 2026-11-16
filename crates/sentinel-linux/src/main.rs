@@ -32,6 +32,12 @@ enum Command {
     FirewallInstall { blocklist: PathBuf },
     /// Remove only the Sentinel-owned nftables table.
     FirewallRemove,
+    /// Encrypt and move a suspicious file into the protected quarantine.
+    Quarantine { path: PathBuf, #[arg(long, default_value = "user initiated")] reason: String },
+    /// Restore a quarantined item by its UUID, without overwriting an existing path.
+    Restore { id: String },
+    /// List encrypted quarantine entries.
+    QuarantineList,
 }
 
 fn build_scanner(definitions_dir: &Path, rules_dir: &Path) -> Result<Arc<FileScanner>> {
@@ -142,6 +148,44 @@ fn main() -> Result<()> {
             #[cfg(not(target_os = "linux"))]
             bail!("nftables integration is available only on Linux");
         }
+        Command::Quarantine { path, reason } => {
+            #[cfg(target_os = "linux")]
+            {
+                let metadata = std::fs::symlink_metadata(&path)?;
+                if !metadata.file_type().is_file() {
+                    bail!("quarantine accepts regular files only; symlinks and special files are rejected");
+                }
+                let store = open_quarantine_store()?;
+                let entry = store.quarantine_file(&path, reason)?;
+                println!("{}", serde_json::to_string_pretty(&entry)?);
+            }
+            #[cfg(not(target_os = "linux"))]
+            bail!("Linux quarantine command is available only on Linux");
+        }
+        Command::Restore { id } => {
+            #[cfg(target_os = "linux")]
+            {
+                let uuid = uuid::Uuid::parse_str(&id).context("invalid quarantine UUID")?;
+                let store = open_quarantine_store()?;
+                let entry = store.read_entry(sentinel_quarantine::QuarantineId(uuid))?;
+                if std::fs::symlink_metadata(&entry.original_path).is_ok() {
+                    bail!("restore target already exists; move it first to avoid overwriting data");
+                }
+                let restored = store.restore(sentinel_quarantine::QuarantineId(uuid))?;
+                println!("{}", serde_json::to_string_pretty(&restored)?);
+            }
+            #[cfg(not(target_os = "linux"))]
+            bail!("Linux quarantine command is available only on Linux");
+        }
+        Command::QuarantineList => {
+            #[cfg(target_os = "linux")]
+            {
+                let store = open_quarantine_store()?;
+                println!("{}", serde_json::to_string_pretty(&store.list_entries()?)?);
+            }
+            #[cfg(not(target_os = "linux"))]
+            bail!("Linux quarantine command is available only on Linux");
+        }
         Command::Scan { path } => {
             let scanner = build_scanner(&cli.definitions_dir, &cli.rules_dir)?;
             let (scanned, suspicious, malicious) = scan_path(&scanner, &path)?;
@@ -176,4 +220,21 @@ fn main() -> Result<()> {
         }
     }
     Ok(())
+}
+
+#[cfg(target_os = "linux")]
+fn open_quarantine_store() -> Result<sentinel_quarantine::QuarantineStore> {
+    use std::os::unix::fs::{MetadataExt, PermissionsExt};
+
+    if unsafe { libc::geteuid() } != 0 {
+        bail!("quarantine operations require root privileges; rerun with sudo");
+    }
+    let root = PathBuf::from("/var/lib/bdfr-sentinel/quarantine");
+    std::fs::create_dir_all(&root)?;
+    let metadata = std::fs::symlink_metadata(&root)?;
+    if !metadata.file_type().is_dir() || metadata.uid() != 0 {
+        bail!("quarantine directory must be a real directory owned by root");
+    }
+    std::fs::set_permissions(&root, std::fs::Permissions::from_mode(0o700))?;
+    Ok(sentinel_quarantine::QuarantineStore::open(root)?)
 }
