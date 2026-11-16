@@ -140,7 +140,10 @@ fn main() -> Result<()> {
                 println!("{}", serde_json::to_string_pretty(&report)?);
             }
             #[cfg(not(target_os = "linux"))]
-            bail!("nftables integration is available only on Linux");
+            {
+                let _ = &blocklist;
+                bail!("nftables integration is available only on Linux");
+            }
         }
         Command::FirewallRemove => {
             #[cfg(target_os = "linux")]
@@ -160,7 +163,10 @@ fn main() -> Result<()> {
                 println!("{}", serde_json::to_string_pretty(&entry)?);
             }
             #[cfg(not(target_os = "linux"))]
-            bail!("Linux quarantine command is available only on Linux");
+            {
+                let _ = (&path, &reason);
+                bail!("Linux quarantine command is available only on Linux");
+            }
         }
         Command::Restore { id } => {
             #[cfg(target_os = "linux")]
@@ -175,7 +181,10 @@ fn main() -> Result<()> {
                 println!("{}", serde_json::to_string_pretty(&restored)?);
             }
             #[cfg(not(target_os = "linux"))]
-            bail!("Linux quarantine command is available only on Linux");
+            {
+                let _ = &id;
+                bail!("Linux quarantine command is available only on Linux");
+            }
         }
         Command::QuarantineList => {
             #[cfg(target_os = "linux")]
