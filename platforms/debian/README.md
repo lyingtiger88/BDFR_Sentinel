@@ -1,4 +1,4 @@
-# Soban for Debian
+# soban for Debian
 
 Debian packaging and service boundary for the shared Rust security core.
 
