@@ -237,8 +237,7 @@ fn main() -> eframe::Result<()> {
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([1120.0, 760.0])
-            .with_min_inner_size([860.0, 600.0])
-            .with_icon(eframe::icon_data::from_png_bytes(include_bytes!("../../../assets/soban-icon.png")).unwrap_or_default()),
+            .with_min_inner_size([860.0, 600.0]),
         ..Default::default()
     };
     eframe::run_native("Soban", options, Box::new(|cc| Ok(Box::new(SobanLinuxApp::new(cc)))))
