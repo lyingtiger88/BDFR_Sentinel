@@ -28,6 +28,10 @@ enum Command {
     Watch { path: PathBuf },
     /// Print detected Linux integration capabilities without changing system state.
     Capabilities,
+    /// Install outbound IP block rules in the isolated Sentinel nftables table.
+    FirewallInstall { blocklist: PathBuf },
+    /// Remove only the Sentinel-owned nftables table.
+    FirewallRemove,
 }
 
 fn build_scanner(definitions_dir: &Path, rules_dir: &Path) -> Result<Arc<FileScanner>> {
@@ -116,6 +120,27 @@ fn main() -> Result<()> {
             }
             #[cfg(not(target_os = "linux"))]
             bail!("capability discovery is available only on Linux");
+        }
+        Command::FirewallInstall { blocklist } => {
+            #[cfg(target_os = "linux")]
+            {
+                use sentinel_network::NetworkBlocklist;
+                let blocklist = NetworkBlocklist::load(&blocklist)
+                    .with_context(|| format!("cannot read blocklist {}", blocklist.display()))?;
+                if blocklist.is_empty() {
+                    bail!("blocklist is empty; refusing to install an empty firewall policy");
+                }
+                let report = sentinel_linux::firewall::install_blocklist(&blocklist)?;
+                println!("{}", serde_json::to_string_pretty(&report)?);
+            }
+            #[cfg(not(target_os = "linux"))]
+            bail!("nftables integration is available only on Linux");
+        }
+        Command::FirewallRemove => {
+            #[cfg(target_os = "linux")]
+            sentinel_linux::firewall::remove_sentinel_table()?;
+            #[cfg(not(target_os = "linux"))]
+            bail!("nftables integration is available only on Linux");
         }
         Command::Scan { path } => {
             let scanner = build_scanner(&cli.definitions_dir, &cli.rules_dir)?;
