@@ -1,0 +1,18 @@
+[package]
+name = "sentinel-linux"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Linux-native platform adapters for BDFR Sentinel"
+
+[dependencies]
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tracing.workspace = true
+sentinel-core = { path = "../sentinel-core" }
+sentinel-realtime = { path = "../sentinel-realtime" }
+sentinel-network = { path = "../sentinel-network" }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+libc = "0.2"
