@@ -72,7 +72,7 @@ fn build_scanner(definitions_dir: &Path, rules_dir: &Path) -> Result<Arc<FileSca
 
     if registry.is_empty() {
         bail!(
-            "no usable malware definitions loaded; refusing to label files clean.              Install definitions already verified by the trusted updater under {} and YARA rules under {}",
+            "no usable malware definitions loaded; refusing to label files clean. Install definitions already verified by the trusted updater under {} and YARA rules under {}",
             definitions_dir.display(),
             rules_dir.display()
         );
