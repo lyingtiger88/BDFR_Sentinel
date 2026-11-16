@@ -26,6 +26,7 @@ class MainActivity : Activity() {
     private lateinit var scanButton: Button
     private lateinit var title: TextView
     private var languageCode = "en"
+    private var themeName = "Soban Default"
     private val nativeScanner by lazy { NativeScanner() }
 
     private val languages = listOf(
@@ -47,8 +48,9 @@ class MainActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        languageCode = getSharedPreferences("soban-ui", Context.MODE_PRIVATE)
-            .getString("language", "en") ?: "en"
+        val prefs = getSharedPreferences("soban-ui", Context.MODE_PRIVATE)
+        languageCode = prefs.getString("language", "en") ?: "en"
+        themeName = prefs.getString("theme", "Soban Default") ?: "Soban Default"
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -64,6 +66,18 @@ class MainActivity : Activity() {
             text = "Soban"
             textSize = 30f
             gravity = Gravity.CENTER
+        }
+        val themePicker = Spinner(this)
+        val themeNames = listOf("Soban Default", "Obsidian", "Arctic", "Graphite", "High Contrast")
+        themePicker.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, themeNames)
+        themePicker.setSelection(themeNames.indexOf(themeName).coerceAtLeast(0))
+        themePicker.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
+            override fun onNothingSelected(parent: android.widget.AdapterView<*>?) = Unit
+            override fun onItemSelected(parent: android.widget.AdapterView<*>?, view: View?, position: Int, id: Long) {
+                themeName = themeNames[position]
+                getSharedPreferences("soban-ui", Context.MODE_PRIVATE).edit().putString("theme", themeName).apply()
+                applyTheme(root)
+            }
         }
         val languagePicker = Spinner(this)
         languagePicker.adapter = ArrayAdapter(
@@ -98,12 +112,36 @@ class MainActivity : Activity() {
         }
 
         root.addView(title)
+        root.addView(themePicker)
         root.addView(languagePicker)
         root.addView(status)
         root.addView(scanButton)
         setContentView(root)
         applyLocaleDirection()
+        applyTheme(root)
         updateLabels()
+    }
+
+    private fun applyTheme(root: LinearLayout) {
+        val palette = when (themeName) {
+            "Obsidian" -> intArrayOf(0xFF090D15.toInt(), 0xFF172438.toInt(), 0xFF55A9FF.toInt(), 0xFFE8F2FF.toInt())
+            "Arctic" -> intArrayOf(0xFFEAF5FA.toInt(), 0xFFD5EAF4.toInt(), 0xFF0878B8.toInt(), 0xFF18394B.toInt())
+            "Graphite" -> intArrayOf(0xFF202326.toInt(), 0xFF343A40.toInt(), 0xFFB7C1CB.toInt(), 0xFFF1F3F5.toInt())
+            "High Contrast" -> intArrayOf(0xFF000000.toInt(), 0xFF202020.toInt(), 0xFF00E5FF.toInt(), 0xFFFFFFFF.toInt())
+            else -> intArrayOf(0xFF101B27.toInt(), 0xFF1D2B3A.toInt(), 0xFF60CDFF.toInt(), 0xFFF4F7FA.toInt())
+        }
+        root.setBackgroundColor(palette[0])
+        title.setTextColor(palette[2])
+        status.setTextColor(palette[3])
+        scanButton.setTextColor(palette[3])
+        scanButton.backgroundTintList = android.content.res.ColorStateList.valueOf(palette[1])
+        title.text = when (themeName) {
+            "Obsidian" -> "◉  Soban"
+            "Arctic" -> "❖  Soban"
+            "Graphite" -> "⬡  Soban"
+            "High Contrast" -> "◆  SOBAN"
+            else -> "⬡  Soban"
+        }
     }
 
     private fun applyLocaleDirection() {
