@@ -26,6 +26,8 @@ sentinel-realtime = { path = "../sentinel-realtime" }
 sentinel-network = { path = "../sentinel-network" }
 sentinel-definitions = { path = "../sentinel-definitions" }
 sentinel-yara = { path = "../sentinel-yara" }
+sentinel-quarantine = { path = "../sentinel-quarantine" }
+uuid.workspace = true
 
 [target.'cfg(target_os = "linux")'.dependencies]
 libc = "0.2"
