@@ -357,12 +357,12 @@ mod kernel {
 
         for rule in policy.application_rules.iter().filter(|rule| rule.enabled) {
             if rule.remote_ports.len() > 32 || rule.local_ports.len() > 32 || rule.remote_ports.len().max(1) * rule.local_ports.len().max(1) > 32 {
-                return Err(io::Error::new(io::ErrorKind::InvalidInput, "firewall rules may target at most 32 remote ports"));
+                return Err(io::Error::new(io::ErrorKind::InvalidInput, "firewall rules may generate at most 32 port combinations"));
             }
             if rule.remote_ports.contains(&0) || rule.local_ports.contains(&0) {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidInput,
-                    "firewall rules cannot target remote port 0",
+                    "firewall rules cannot target local or remote port 0",
                 ));
             }
         }
