@@ -21,6 +21,7 @@ members = [
     "crates/sentinel-ransomware",
     "crates/sentinel-removable",
     "crates/sentinel-network",
+    "crates/sentinel-linux",
 ]
 
 [workspace.package]
