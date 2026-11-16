@@ -10,7 +10,7 @@ use uuid::Uuid;
 use walkdir::WalkDir;
 
 #[derive(Debug, Parser)]
-#[command(name = "bdfr-sentinel", version, about = "BDFR Sentinel antivirus MVP")]
+#[command(name = "bdfr-sentinel", version, about = "Soban antivirus MVP")]
 struct Cli {
     #[command(subcommand)]
     command: Command,
@@ -72,7 +72,7 @@ fn main() -> Result<()> {
             json,
         ),
         Command::Status => {
-            println!("BDFR Sentinel {}", env!("CARGO_PKG_VERSION"));
+            println!("Soban {}", env!("CARGO_PKG_VERSION"));
             println!("Core scanner: ready");
             println!("PE analyzer: ready");
             println!("Hash definitions: HDB/HSB supported");
@@ -155,7 +155,7 @@ fn perf_smoke(size_mb: usize, iterations: usize) -> Result<()> {
 
     let _ = fs::remove_file(&path);
 
-    println!("BDFR Sentinel performance smoke test");
+    println!("Soban performance smoke test");
     println!("file_size_mb={size_mb}");
     println!("iterations={iterations}");
     println!("cold_scan_throughput_mb_s={cold_mbps:.2}");
@@ -261,7 +261,7 @@ fn scan_one(
 
     if quarantine_malware && report.verdict.level == ThreatLevel::Malicious {
         if let Some(store) = quarantine {
-            let entry = store.quarantine_file(path, "malware detected by BDFR Sentinel")?;
+            let entry = store.quarantine_file(path, "malware detected by Soban")?;
             println!("  quarantined as {}", entry.id.0);
         }
     }
