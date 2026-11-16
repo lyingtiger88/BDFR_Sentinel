@@ -62,6 +62,30 @@ impl FileScanner {
         }
     }
 
+    /// Scan an in-memory buffer. This is used by constrained platforms such as
+    /// Android where a content URI must be streamed by the host application and
+    /// must not be converted into a guessed filesystem path.
+    pub fn scan_bytes(&self, label: impl Into<String>, data: &[u8]) -> Result<ScanReport, ScanError> {
+        if data.len() as u64 > self.config.max_file_size {
+            return Err(ScanError::FileTooLarge {
+                actual: data.len() as u64,
+                max: self.config.max_file_size,
+            });
+        }
+
+        let label = label.into();
+        let sha256 = hex_sha256(data);
+        let detections = self.scan_bytes_recursive(data, 0, label.clone())?;
+        Ok(ScanReport {
+            path: label,
+            metadata: FileMetadata {
+                size: data.len() as u64,
+                sha256,
+            },
+            verdict: self.config.policy.evaluate(detections),
+        })
+    }
+
     pub fn scan_file<P: AsRef<Path>>(&self, path: P) -> Result<ScanReport, ScanError> {
         let path = path.as_ref();
         let metadata = fs::metadata(path)?;
