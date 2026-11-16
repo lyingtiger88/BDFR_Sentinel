@@ -32,5 +32,10 @@
     56
   ],
   "corner_radius": 12,
-  "compact": false
+  "compact": false,
+  "wallpaper_style": "aurora",
+  "icon_style": "frost-line",
+  "illustration_style": "crystal",
+  "typography_scale": 1.05,
+  "control_scale": 1.08
 }
