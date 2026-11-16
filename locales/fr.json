@@ -1,0 +1,12 @@
+{
+  "language": "Langue de l’application",
+  "direction": "ltr",
+  "dashboard": "Tableau de sécurité",
+  "scan": "Analyser",
+  "quarantine": "Quarantaine",
+  "history": "Historique",
+  "settings": "Paramètres",
+  "about": "À propos",
+  "appearance": "Apparence et thèmes",
+  "choose_file": "Choisir un fichier à analyser"
+}
