@@ -504,7 +504,15 @@ mod kernel {
                         }
                     }
 
-                    let display_name = if rule.name.trim().is_empty() {\n                        "Soban application rule".to_string()\n                    } else {\n                        format!("Soban: {}", rule.name.trim())\n                    };\n                    add_filter(\n                        transaction,\n                        &display_name,\n                        "Per-application WFP policy",
+                    let display_name = if rule.name.trim().is_empty() {
+                        "Soban application rule".to_string()
+                    } else {
+                        format!("Soban: {}", rule.name.trim())
+                    };
+                    add_filter(
+                        transaction,
+                        &display_name,
+                        "Per-application WFP policy",
                         action,
                         layer,
                         weight,
@@ -657,7 +665,10 @@ mod tests {
     fn duplicate_blocklist_entries_are_collapsed() {
         let path =
             std::env::temp_dir().join(format!("bdfr-sentinel-network-{}.txt", std::process::id()));
-        fs::write(&path, "203.0.113.0/24\n203.0.113.0/24\n198.51.100.10\n").unwrap();
+        fs::write(&path, "203.0.113.0/24
+203.0.113.0/24
+198.51.100.10
+").unwrap();
 
         let list = NetworkBlocklist::load(&path).unwrap();
         let _ = fs::remove_file(path);
