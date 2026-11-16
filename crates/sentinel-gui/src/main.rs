@@ -206,6 +206,7 @@ fn built_in_skins() -> Vec<UiSkin> {
             text: [238, 243, 250],
             corner_radius: 12,
             compact: false,
+            wallpaper_style: "aurora".to_string(), icon_style: "neon-solid".to_string(), illustration_style: "orbital".to_string(), typography_scale: 1.05, control_scale: 1.08,
         },
         UiSkin {
             name: "Arctic".to_string(),
@@ -218,6 +219,7 @@ fn built_in_skins() -> Vec<UiSkin> {
             text: [24, 43, 56],
             corner_radius: 12,
             compact: false,
+            wallpaper_style: "aurora".to_string(), icon_style: "frost-line".to_string(), illustration_style: "crystal".to_string(), typography_scale: 1.05, control_scale: 1.08,
         },
         UiSkin {
             name: "Graphite".to_string(),
@@ -243,6 +245,7 @@ fn built_in_skins() -> Vec<UiSkin> {
             text: [255, 255, 255],
             corner_radius: 4,
             compact: true,
+            wallpaper_style: "circuit".to_string(), icon_style: "bold-solid".to_string(), illustration_style: "geometric".to_string(), typography_scale: 1.05, control_scale: 1.08,
         },
     ]
 }
