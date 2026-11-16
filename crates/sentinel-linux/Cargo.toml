@@ -20,6 +20,7 @@ serde.workspace = true
 serde_json.workspace = true
 tracing.workspace = true
 walkdir.workspace = true
+ipnet.workspace = true
 sentinel-core = { path = "../sentinel-core" }
 sentinel-realtime = { path = "../sentinel-realtime" }
 sentinel-network = { path = "../sentinel-network" }
