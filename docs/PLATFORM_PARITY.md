@@ -69,5 +69,29 @@ Keep Windows as the reference implementation and bring Debian GNU/Linux and Andr
 ## Current branch scope
 This branch now includes: a Linux scan/watch CLI using the shared hash and YARA-X engines; conservative Linux capability discovery; an opt-in nftables blocklist isolated to the bdfr_sentinel table; explicit encrypted quarantine/restore commands with owner-only key storage and no-replace restore semantics; an Android Kotlin SAF shell; a Rust JNI buffer-scanning bridge; and a shared bounded in-memory scan API. Neither port is yet at full Windows parity. Debian still needs systemd lifecycle, signed updater wiring, full process/ransomware telemetry, broader firewall policy and packaging. Android still needs native ABI packaging, signed-definition installation/verification, Android Keystore quarantine, full UI/history/settings and background/VPN integrations.
 
+
+## Three-platform feature parity tracker
+
+This matrix is the source of truth for feature requests that must be carried across all three targets. Statuses describe source implementation only; no runtime validation is implied where builds/tests have not been authorized.
+
+| Feature area | Windows | Debian | Android |
+|---|---|---|---|
+| Shared scan/verdict contracts | Implemented | Implemented via shared core | Implemented via bounded JNI buffer API; integration needs validation |
+| On-demand scan | Reference implementation | Implemented in CLI; needs validation | Limited; SAF flow and JNI source exist, native ABI not packaged |
+| Hash/YARA detection | Reference implementation | Implemented against shared engines; needs validation | Bridge loads shared engines; definitions installation/verification integration pending |
+| Realtime file protection | Windows-specific implementation | Limited to post-write watcher; no pre-execution blocking | Planned/limited to app-scoped access |
+| Quarantine/restore | Reference implementation | CLI integration and Linux key adapter implemented; needs validation | Planned; Android Keystore adapter pending |
+| Network protection | WFP reference implementation | Initial isolated nftables blocklist backend; needs validation | Planned; optional VPNService integration pending |
+| Process/behavior telemetry | Reference implementation | Planned; procfs/eBPF integrations pending | Limited by Android sandbox; own-app scope initially |
+| Ransomware protection | Reference implementation | Planned | Limited/planned |
+| Signed definition updates | Shared updater reference | Integration pending | Integration pending |
+| Service/app lifecycle | Windows service | systemd service pending | Android lifecycle shell present; full background work pending |
+| UI and history | Windows reference UI | Desktop UI pending | Initial SAF screen only; full dashboard/history pending |
+| License/entitlement | Reference behavior | Integration pending | Integration pending |
+
+### Mandatory propagation checklist
+
+For every subsequent feature request, update all three columns in the same work cycle. If a feature cannot be provided on one platform, document the OS reason, expose a Limited/Unavailable state and track the closest safe alternative. Never silently omit a platform.
+
 ## Build policy
 Do not run cargo build, cargo test, Gradle build, APK packaging, Debian packaging or any GitHub Actions workflow until the user explicitly authorizes a build. Source inspection and non-build review are permitted.
