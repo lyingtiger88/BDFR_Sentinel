@@ -1,4 +1,4 @@
-# BDFR Sentinel for Debian
+# Soban for Debian
 
 Debian packaging and service boundary for the shared Rust security core.
 
