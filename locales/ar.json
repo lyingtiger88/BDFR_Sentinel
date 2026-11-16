@@ -1,0 +1,12 @@
+{
+  "language": "لغة التطبيق",
+  "direction": "rtl",
+  "dashboard": "لوحة الأمان",
+  "scan": "فحص",
+  "quarantine": "العزل",
+  "history": "السجل",
+  "settings": "الإعدادات",
+  "about": "حول",
+  "appearance": "المظهر والسمات",
+  "choose_file": "اختر ملفاً للفحص"
+}
