@@ -1,0 +1,13 @@
+{
+  "language": "زبان",
+  "direction": "rtl",
+  "dashboard": "پاسبانءِ ڈیش بورڈ",
+  "scan": "اسکین",
+  "quarantine": "قرنطین",
+  "history": "تاریخ",
+  "settings": "ترتیب",
+  "about": "باروا",
+  "appearance": "رنگ و نمونگ",
+  "choose_file": "اسکینءَ فایل چُنّیت",
+  "review_note": "Initial Balochi draft; validate with native speakers before production."
+}
