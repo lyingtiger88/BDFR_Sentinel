@@ -2793,11 +2793,13 @@ impl SentinelApp {
                         {
                             self.protection_preferences.firewall_application_rules.push(
                                 ApplicationRule {
+                                    name: path.file_stem().and_then(|name| name.to_str()).unwrap_or("Application").to_string(),
                                     application: path,
                                     direction: FirewallDirection::Outbound,
                                     action: FirewallAction::Allow,
                                     protocol: FirewallProtocol::Any,
                                     remote_ports: Vec::new(),
+                                    remote_ports_text: Some(String::new()),
                                     enabled: true,
                                 },
                             );
@@ -2832,6 +2834,9 @@ impl SentinelApp {
             });
 
             let mut remove_rule = None;
+            let mut replace_rule_path = None;
+            let mut duplicate_rule = None;
+            let mut invalid_port_rule: Option<(usize, String)> = None;
             for (index, rule) in self
                 .protection_preferences
                 .firewall_application_rules
@@ -2845,16 +2850,11 @@ impl SentinelApp {
                     .outer_margin(egui::Margin::symmetric(0, 4))
                     .show(ui, |ui| {
                         ui.horizontal_wrapped(|ui| {
-                            ui.checkbox(&mut rule.enabled, "");
-                            ui.label(
-                                egui::RichText::new(
-                                    rule.application
-                                        .file_name()
-                                        .and_then(|name| name.to_str())
-                                        .unwrap_or("application"),
-                                )
-                                .strong(),
-                            );
+                            ui.checkbox(&mut rule.enabled, "Enabled");
+                            ui.label(egui::RichText::new(rule.application.file_name().and_then(|name| name.to_str()).unwrap_or("application")).strong());
+                            if ui.small_button("Change file").clicked() { replace_rule_path = Some(index); }
+                            if ui.small_button("Duplicate").clicked() { duplicate_rule = Some(index); }
+                            if ui.small_button("Remove").clicked() { remove_rule = Some(index); }
 
                             egui::ComboBox::from_id_salt(("fw_action", index))
                                 .selected_text(match rule.action {
@@ -2922,23 +2922,54 @@ impl SentinelApp {
                                     );
                                 });
 
-                            if ui.small_button("Remove").clicked() {
-                                remove_rule = Some(index);
+                        });
+                        ui.horizontal(|ui| {
+                            ui.label("Rule name:");
+                            ui.add(egui::TextEdit::singleline(&mut rule.name).desired_width(190.0));
+                        });
+                        ui.horizontal(|ui| {
+                            ui.label("Remote ports:");
+                            let port_text = rule.remote_ports_text.get_or_insert_with(|| {
+                                rule.remote_ports.iter().map(u16::to_string).collect::<Vec<_>>().join(", ")
+                            });
+                            let response = ui.add(egui::TextEdit::singleline(port_text).desired_width(220.0)
+                                .hint_text("Any port, or e.g. 80, 443, 8080"));
+                            if response.changed() {
+                                match parse_firewall_ports(port_text) {
+                                    Ok(ports) => rule.remote_ports = ports,
+                                    Err(error) => invalid_port_rule = Some((index, error)),
+                                }
                             }
                         });
-                        ui.label(
-                            egui::RichText::new(rule.application.display().to_string())
-                                .size(10.0)
-                                .color(ui.visuals().weak_text_color()),
-                        );
+                        if let Some((invalid_index, error)) = &invalid_port_rule {
+                            if *invalid_index == index { ui.label(egui::RichText::new(error).color(BAD).size(11.0)); }
+                        }
+                        ui.label(egui::RichText::new(rule.application.display().to_string())
+                            .size(10.0).color(ui.visuals().weak_text_color()));
                     });
             }
 
-            if let Some(index) = remove_rule {
-                self.protection_preferences
-                    .firewall_application_rules
-                    .remove(index);
+            if let Some(index) = replace_rule_path {
+                if let Some(path) = rfd::FileDialog::new().add_filter("Executable", &["exe"]).pick_file() {
+                    if let Some(rule) = self.protection_preferences.firewall_application_rules.get_mut(index) {
+                        rule.application = path;
+                    }
+                }
             }
+            if let Some(index) = duplicate_rule {
+                if let Some(mut rule) = self.protection_preferences.firewall_application_rules.get(index).cloned() {
+                    rule.name = format!("{} (copy)", if rule.name.trim().is_empty() { "Application rule" } else { &rule.name });
+                    self.protection_preferences.firewall_application_rules.push(rule);
+                }
+            }
+            if let Some(index) = remove_rule {
+                self.protection_preferences.firewall_application_rules.remove(index);
+            }
+            if let Some((index, error)) = invalid_port_rule {
+                ui.label(egui::RichText::new(format!("Rule {} not applied: {error}", index + 1)).color(BAD));
+            }
+            ui.label(egui::RichText::new("Remote ports accept comma-separated destination ports. Leave empty to match every remote port. Invalid edits do not replace the last valid rule.")
+                .size(11.0).color(ui.visuals().weak_text_color()));
             ui.add_space(10.0);
             ui.separator();
             ui.horizontal(|ui| {
@@ -3578,6 +3609,22 @@ fn collect_scan_targets(target: &Path, cancel: &AtomicBool) -> Vec<PathBuf> {
         }
     }
     files
+}
+
+
+fn parse_firewall_ports(value: &str) -> Result<Vec<u16>, String> {
+    let value = value.trim();
+    if value.is_empty() { return Ok(Vec::new()); }
+    let mut ports = Vec::new();
+    for item in value.split(',') {
+        let item = item.trim();
+        if item.is_empty() { return Err("Empty port entry. Use comma-separated ports such as 80, 443.".to_string()); }
+        let port = item.parse::<u16>().map_err(|_| format!("Invalid port '{item}'. Ports must be between 1 and 65535."))?;
+        if port == 0 { return Err("Port 0 is not valid for an application rule.".to_string()); }
+        if !ports.contains(&port) { ports.push(port); }
+    }
+    if ports.len() > 32 { return Err("A rule can contain at most 32 remote ports.".to_string()); }
+    Ok(ports)
 }
 
 fn page_header(ui: &mut egui::Ui, page: Page, title: &str, subtitle: &str) {
