@@ -3042,6 +3042,7 @@ impl SentinelApp {
                 .size(11.0)
                 .color(ui.visuals().weak_text_color()),
             );
+            let mut block_live_process: Option<PathBuf> = None;
             egui::ScrollArea::vertical()
                 .max_height(220.0)
                 .id_salt("firewall_live_connections")
@@ -3062,6 +3063,13 @@ impl SentinelApp {
                                             .size(10.0)
                                             .color(ui.visuals().weak_text_color()),
                                     );
+                                    if let Some(process) = self.system.process(sysinfo::Pid::from_u32(pid)) {
+                                        if let Some(executable) = process.exe() {
+                                            if executable.is_file() && ui.small_button("Block app").clicked() {
+                                                block_live_process = Some(executable.to_path_buf());
+                                            }
+                                        }
+                                    }
                                 }
                             });
                         }
@@ -3077,6 +3085,24 @@ impl SentinelApp {
                         }
                     }
                 });
+            if let Some(path) = block_live_process {
+                if !self.protection_preferences.firewall_application_rules.iter().any(|rule| rule.application == path && rule.action == FirewallAction::Block && rule.enabled) {
+                    let name = path.file_stem().and_then(|value| value.to_str()).unwrap_or("Application").to_string();
+                    self.protection_preferences.firewall_application_rules.push(ApplicationRule {
+                        name: format!("Block {name}"),
+                        application: path,
+                        direction: FirewallDirection::Both,
+                        action: FirewallAction::Block,
+                        protocol: FirewallProtocol::Any,
+                        remote_ports: Vec::new(),
+                        local_ports: Vec::new(),
+                        remote_ports_text: Some(String::new()),
+                        local_ports_text: Some(String::new()),
+                        enabled: true,
+                    });
+                    self.status_text = "Block rule added from the live connection. Apply protection settings to activate it.".to_string();
+                }
+            }
 
             ui.checkbox(
                 &mut self.protection_preferences.enable_scheduled_scan,
